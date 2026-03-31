@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lambda.scheduled-notify</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd /Users/fengzhen.zhang/alpha/lambda &amp;&amp; source .venv/bin/activate &amp;&amp; python run.py &amp;&amp; python notify.py</string>
+    </array>
+
+    <!-- 每天 04:30 执行（示例，用户可自定义） -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/fengzhen.zhang/alpha/lambda/output/scheduled-notify.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/fengzhen.zhang/alpha/lambda/output/scheduled-notify.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MASSIVE_API_KEY</key>
+        <string>NRv9bg7gg_l_yHyfjUmvCcT5OJCkSLk8</string>
+        <key>TELEGRAM_BOT_TOKEN</key>
+        <string>8490920476:AAG2ifj8rROfrMA-Za0j3kV6o_53f9JItik</string>
+        <key>TELEGRAM_CHAT_ID</key>
+        <string>7910705446</string>
+    </dict>
+</dict>
+</plist>
