@@ -41,7 +41,7 @@ def send_photo(token: str, chat_id: str, image_path: str) -> bool:
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
     try:
         with open(image_path, "rb") as f:
-            resp = requests.post(url, data={"chat_id": chat_id}, files={"photo": f})
+            resp = requests.post(url, data={"chat_id": chat_id}, files={"photo": f}, timeout=30)
         result = resp.json()
         if result.get("ok"):
             logger.info("发送成功: %s", os.path.basename(image_path))
@@ -83,7 +83,10 @@ def process_and_send(
             continue
 
         if send_photo(token, chat_id, path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning("删除失败 %s: %s", name, e)
             sent += 1
         else:
             failed += 1
