@@ -29,11 +29,11 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>MASSIVE_API_KEY</key>
-        <string>YOUR_MASSIVE_API_KEY</string>
+        <string>NRv9bg7gg_l_yHyfjUmvCcT5OJCkSLk8</string>
         <key>TELEGRAM_BOT_TOKEN</key>
-        <string>YOUR_BOT_TOKEN</string>
+        <string>8490920476:AAG2ifj8rROfrMA-Za0j3kV6o_53f9JItik</string>
         <key>TELEGRAM_CHAT_ID</key>
-        <string>YOUR_CHAT_ID</string>
+        <string>7910705446</string>
     </dict>
 </dict>
 </plist>
