@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lambda.scheduled-notify</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd /Users/fengzhen.zhang/alpha/lambda &amp;&amp; source .venv/bin/activate &amp;&amp; python run.py &amp;&amp; python notify.py</string>
+    </array>
+
+    <!-- 每天 04:30 执行（示例，用户可自定义） -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/fengzhen.zhang/alpha/lambda/output/scheduled-notify.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/fengzhen.zhang/alpha/lambda/output/scheduled-notify.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MASSIVE_API_KEY</key>
+        <string>YOUR_MASSIVE_API_KEY</string>
+        <key>TELEGRAM_BOT_TOKEN</key>
+        <string>YOUR_BOT_TOKEN</string>
+        <key>TELEGRAM_CHAT_ID</key>
+        <string>YOUR_CHAT_ID</string>
+    </dict>
+</dict>
+</plist>
