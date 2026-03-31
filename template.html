@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lambda 策略系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0a0e17;color:#c8d0dc;line-height:1.6;padding:20px}
+.container{max-width:1500px;margin:0 auto}
+
+/* 头部 */
+.header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.header h1{color:#e8ecf1;font-size:26px}
+
+/* 卡片通用 */
+.box{background:linear-gradient(135deg,#141b2d,#1a2332);border:1px solid #2a3548;border-radius:12px;padding:20px;margin-bottom:20px}
+.box h3{color:#4fc3f7;font-size:17px;margin-bottom:14px}
+
+/* 统计+层级合并为一行 */
+.overview-row{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;align-items:stretch}
+.overview-row .stat{background:#141b2d;border:1px solid #253044;border-radius:6px;padding:6px 12px;text-align:center;min-width:80px}
+.overview-row .stat .v{font-size:16px;font-weight:bold;display:block;line-height:1.2}
+.overview-row .stat .v.grn{color:#4caf50}.overview-row .stat .v.red{color:#ef5350}.overview-row .stat .v.gld{color:#ffc107}.overview-row .stat .v.blu{color:#4fc3f7}
+.overview-row .stat .d{font-size:9px;color:#6b7b8d;margin-top:1px}
+.overview-row .tier-card{border-radius:6px;padding:5px 10px;text-align:center;border:1px solid #253044;flex:1;min-width:110px}
+.overview-row .tier-card .tn{font-size:11px;font-weight:bold;display:block;line-height:1.2}
+.overview-row .tier-card .tv{font-size:14px;font-weight:bold;display:block;margin:1px 0 0;line-height:1.1}
+.overview-row .tier-card .td{font-size:9px;color:#6b7b8d;line-height:1.1;margin-top:0}
+
+/* 决策面板 */
+.decision-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.flow{background:#141b2d;border:1px solid #253044;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;line-height:2;color:#8b95a5}
+.flow .k{color:#c792ea}.flow .c{color:#82aaff}.flow .a{color:#c3e88d}.flow .s{color:#f07178}
+.flow .b1c{color:#ab47bc}.flow .b2c{color:#ff7043}.flow .b3c{color:#66bb6a}.flow .b4c{color:#ffa726}
+
+/* 规则检查表 */
+.rule-table{width:100%;font-size:12px;margin-bottom:14px}
+.rule-table td{padding:6px 0;border-bottom:1px solid #253044}
+.rule-label{text-align:left;color:#8b95a5}
+.rule-val{text-align:right}
+.badge-y{background:#1b5e20;color:#81c784;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px;display:inline-block}
+.badge-n{background:#4a1515;color:#ef9a9a;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px;display:inline-block}
+.conclusion-sell{text-align:center;padding:12px;background:#0a1a0a;border-radius:6px;border:1px solid #1b5e20;margin-bottom:12px}
+.conclusion-skip{text-align:center;padding:12px;background:#1a0a0a;border-radius:6px;border:1px solid #4a1515;margin-bottom:12px}
+.ops-box{padding:10px;background:#0d1421;border-radius:6px;border:1px solid #253044}
+.ops-box .ops-label{color:#546e7a;font-size:11px;margin-bottom:8px}
+.ops-table{width:100%;font-size:12px}
+.ops-table td{padding:4px 0;border-bottom:1px solid #1a2332}
+
+/* 表格 */
+.sec-title{color:#e8ecf1;font-size:18px;margin:28px 0 14px;padding-bottom:6px;border-bottom:1px solid #253044}
+table.weekly{width:100%;border-collapse:collapse;font-size:12px}
+table.weekly thead{position:sticky;top:0;z-index:10}
+table.weekly th{background:#1a2332;color:#8b95a5;padding:8px 5px;text-align:center;border-bottom:2px solid #2a3548;font-weight:600;font-size:11px;white-space:nowrap;position:relative}
+table.weekly th[data-tip]{cursor:help}
+table.weekly th.sortable{cursor:pointer;user-select:none}
+table.weekly th.sortable::before{content:'⇅';margin-right:2px;opacity:.4;font-size:10px}
+table.weekly th.sortable.sort-asc::before{content:'↑';opacity:.8}
+table.weekly th.sortable.sort-desc::before{content:'↓';opacity:.8}
+table.weekly th[data-tip]::after{content:attr(data-tip);position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + 4px);background:rgba(20,27,45,.9);color:#c8d0dc;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:normal;white-space:nowrap;z-index:100;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.4);opacity:0;transition:opacity .2s ease;transition-delay:0s}
+table.weekly th[data-tip]:hover::after{opacity:1;transition-delay:1s}
+table.weekly td{padding:7px 5px;text-align:center;border-bottom:1px solid #1a2332;white-space:nowrap}
+tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
+
+/* 标签 */
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:bold}
+.tag-skip{background:#37474f;color:#78909c}
+.tag-pending{background:#1a237e;color:#7986cb;border:1px dashed #5c6bc0}
+.pct-pos{color:#4caf50}.pct-neg{color:#ef5350}
+.pending-text{color:#7986cb;font-style:italic;font-size:11px}
+.portion{display:inline-block;width:22px;height:22px;line-height:22px;border-radius:50%;text-align:center;font-weight:bold;font-size:10px}
+.p1{background:#1565c0;color:#fff}.p2{background:#6a1b9a;color:#fff}
+.p3{background:#e65100;color:#fff}.p4{background:#2e7d32;color:#fff}
+.bar{display:inline-block;height:5px;border-radius:3px;vertical-align:middle}
+.bar-g{background:linear-gradient(90deg,#2e7d32,#4caf50)}.bar-r{background:linear-gradient(90deg,#c62828,#ef5350)}
+.cum-bar{display:inline-block;height:14px;background:linear-gradient(90deg,#1565c0,#4fc3f7);border-radius:3px;vertical-align:middle;min-width:2px}
+.safe{color:#4caf50}.danger{color:#ff9800}
+
+/* 过滤标签 */
+.filter-chip{display:inline-block;padding:2px 8px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:11px;border:1px solid;opacity:0.4;user-select:none;transition:opacity .15s}
+.filter-chip.active{opacity:1}
+
+/* 打印/导出样式 */
+@media print{
+  body{background:#0a0e17 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .header button{display:none}
+  .container{max-width:100%}
+  table.weekly thead{position:static}
+  .sec-title{display:none !important}
+  .risk-note{display:none !important}
+  .print-hide{display:none !important}
+  tr.print-hide-row{display:none !important}
+  .print-only{display:block !important}
+}
+
+/* 风险提示 */
+.risk-note{margin-top:28px;padding:16px;background:#141b2d;border:1px solid #253044;border-radius:8px;color:#546e7a;font-size:12px;line-height:1.8}
+.risk-note strong{color:#8b95a5}
+
+/* 响应式 */
+@media(max-width:1100px){.decision-grid{grid-template-columns:1fr}}
+@media(max-width:900px){
+  .overview-row{flex-wrap:wrap}
+  .overview-row .tier-card{min-width:140px}
+  table.weekly{font-size:10px}
+  table.weekly td,table.weekly th{padding:5px 2px}
+}
+@media(max-width:600px){
+  .overview-row .stat,.overview-row .tier-card{min-width:100%}
+}
+</style></head><body>
+<div class="container">
+  <!-- 头部 -->
+  <div class="header">
+    <h1>Lambda 策略系统</h1>
+    <span id="tickerName" style="color:#4fc3f7;font-size:20px;font-weight:bold"></span>
+    <div style="flex:1"></div>
+    <button onclick="exportPng()" style="background:#253044;color:#8b95a5;border:1px solid #2a3548;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">导出</button>
+  </div>
+
+  <!-- 统计+层级一行 -->
+  <div class="overview-row" id="overviewRow"></div>
+
+  <!-- 决策面板 -->
+  <div class="box">
+    <div class="decision-grid">
+      <div>
+        <h3>决策树</h3>
+        <div style="color:#8b95a5;font-size:13px;margin-bottom:10px" id="strategyDesc">A 企稳双撑 (10% OTM) + B 弱势守底 (15% OTM) + C 兜底深虚观望 (25% OTM)</div>
+        <div class="flow">
+          <span class="k">IF</span> <span class="c">MACD收窄</span> <span class="k">AND</span> <span class="c">Close &gt; P5_PP</span> <span class="k">AND</span> <span class="c">Close &gt; P30_PP</span>:<br>
+          &nbsp;&nbsp;<span class="a">&rarr; A 企稳双撑: 卖 10% OTM Put (行权价 = Close &times; 0.90)</span><br><br>
+          <span class="k">ELIF</span> <span class="b1c">Close &lt; MA20 AND Close &gt; MA60</span>:<br>
+          &nbsp;&nbsp;<span class="b1c">&rarr; B1 回调均线: 卖 15% OTM Put (行权价 = Close &times; 0.85)</span><br>
+          <span class="k">ELIF</span> <span class="b2c">波动率 &lt; 50% AND |MA20距| &le; 5%</span>:<br>
+          &nbsp;&nbsp;<span class="b2c">&rarr; B2 低波整理: 卖 15% OTM Put</span><br>
+          <span class="k">ELIF</span> <span class="b3c">DIF &lt; 0 AND Close &gt; P30_PP</span>:<br>
+          &nbsp;&nbsp;<span class="b3c">&rarr; B3 超跌支撑: 卖 15% OTM Put</span><br>
+          <span class="k">ELIF</span> <span class="b4c">MA20 &gt; MA60 AND DIF &lt; 0</span>:<br>
+          &nbsp;&nbsp;<span class="b4c">&rarr; B4 趋势动能弱: 卖 15% OTM Put</span><br><br>
+          <span class="k">ELSE</span>: <span class="s">&rarr; C 兜底深虚观望: 卖 25% OTM Put</span>
+        </div>
+        <div style="text-align:center;margin-top:20px;padding:16px 0;border-top:1px solid #253044;line-height:1.6">
+          <div style="font-size:36px;font-weight:900;letter-spacing:12px;background:linear-gradient(135deg,#4fc3f7,#81c784);-webkit-background-clip:text;-webkit-text-fill-color:transparent">控制仓位，纪律至上</div>
+          <div style="font-size:36px;font-weight:900;letter-spacing:12px;background:linear-gradient(135deg,#81c784,#ffc107);-webkit-background-clip:text;-webkit-text-fill-color:transparent">保全本金，久战沙场</div>
+        </div>
+      </div>
+      <div id="latestDecision"></div>
+    </div>
+  </div>
+
+  <!-- 逐周明细 -->
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap" class="sec-title">
+    <span>逐周操作明细</span>
+    <div id="tierFilter" style="display:inline-flex;gap:4px;font-size:12px"></div>
+  </div>
+  <div class="print-only" style="display:none;color:#8b95a5;font-size:14px;margin:16px 0 8px">最近 8 周操作明细</div>
+  <div style="overflow-x:auto">
+    <table class="weekly">
+      <thead><tr>
+        <th data-tip="每周首个交易日（通常为周一）">日期</th>
+        <th data-tip="资金份额轮转 P1→P2→P3→P4，4份循环">P</th>
+        <th data-tip="策略分层：A 企稳双撑(10%OTM) / B1-B4 弱势守底(15%OTM) / C 兜底深虚观望(25%OTM)">层级</th>
+        <th data-tip="Out of The Money，虚值程度。A层10%，B层15%">OTM</th>
+        <th data-tip="入场日收盘价">收盘</th>
+        <th data-tip="卖出 Put 的行权价 = 收盘价 × (1 - OTM%)，点击排序" data-sort="strike" class="sortable">行权价</th>
+        <th data-tip="期权到期日，入场周起第3周的周五">到期日</th>
+        <th data-tip="到期日收盘价（非交易日取前一个交易日），点击排序" data-sort="expiry_close" class="sortable">到期价</th>
+        <th data-tip="(到期价 - 行权价) / 行权价 × 100%，正=未被行权，负=被行权，点击排序" data-sort="settle_diff" class="sortable">结算差比</th>
+        <th data-tip="结算差比 > 0 即平稳到期（未被行权）">平稳到期</th>
+        <th data-tip="(到期价 - 入场收盘价) / 入场收盘价 × 100%">期间涨跌</th>
+        <th data-tip="入场日到到期日之间的最低收盘价">期间最低</th>
+        <th data-tip="(期间最低 - 行权价) / 行权价 × 100%，正=安全，负=曾穿破行权价">距行权</th>
+      </tr></thead>
+      <tbody id="weeklyBody"></tbody>
+    </table>
+  </div>
+
+  <!-- 风险提示 -->
+  <div class="risk-note">
+    <strong>风险提示:</strong> 本策略仅为量化回测研究，不构成任何投资建议。Sell Put 存在潜在无限亏损风险，实际交易需考虑保证金、流动性、滑点等因素。历史表现不代表未来收益，请在充分理解风险后谨慎操作。
+  </div>
+</div>
+
+<script>
+/* ===== 常量 ===== */
+const TIER_COLORS = {
+  A:  {color:'#4fc3f7', bg:'#0d1f2b'},
+  B1: {color:'#ab47bc', bg:'#1a0d2b'},
+  B2: {color:'#ff7043', bg:'#2b1a0d'},
+  B3: {color:'#66bb6a', bg:'#0d2b1a'},
+  B4: {color:'#ffa726', bg:'#2b200d'},
+  C:  {color:'#78909c', bg:'#1a2028'}
+};
+const TIER_NAMES = {A:'企稳双撑',B1:'回调均线',B2:'低波整理',B3:'超跌支撑',B4:'趋势动能弱',C:'兜底深虚观望'};
+const activeTiers = new Set(['A','B1','B2','B3','B4','C']);
+let currentWeeks = [];
+
+/* ===== 工具函数 ===== */
+function fmt(v, d=2) { return v != null ? v.toFixed(d) : '-'; }
+function sign(v, d=2) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(d) : '-'; }
+function pctClass(v) { return v >= 0 ? 'pct-pos' : 'pct-neg'; }
+function portionClass(p) { return 'p' + p; }
+
+/* ===== 渲染：统计+层级一行 ===== */
+function renderOverview(summary, tiers) {
+  const s = summary;
+  const safeRateCls = s.safe_rate >= 90 ? 'grn' : s.safe_rate >= 70 ? 'gld' : 'red';
+
+  // 统计卡片
+  let html = `<div class="stat"><span class="v ${safeRateCls}">${s.safe_rate}%</span><span class="d">平稳到期 ${s.safe_count}/${s.settled}</span></div>`;
+  html += `<div class="stat"><span class="v blu">${s.sell_count}/${s.total_weeks}</span><span class="d">卖出/总周</span></div>`;
+
+  // 层级卡片
+  const order = ['A','B1','B2','B3','B4','C'];
+  html += order.map(k => {
+    const t = tiers[k];
+    if (!t) return '';
+    const tc = TIER_COLORS[k];
+    const rateCls = t.safe_rate >= 100 ? '#4caf50' : t.safe_rate >= 80 ? '#ffc107' : '#ef5350';
+    const extra = t.count > t.settled ? ' (含进行中)' : '';
+    return `<div class="tier-card" style="background:${tc.bg}">
+      <span class="tn" style="color:${tc.color}">${k} ${t.name}</span>
+      <span class="tv" style="color:${rateCls}">${t.safe_count}/${t.settled} ${t.safe_rate}%</span>
+      <span class="td">${t.otm}%OTM | ${t.count}笔${extra}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('overviewRow').innerHTML = html;
+}
+
+/* ===== 渲染：最新决策 ===== */
+function renderDecision(latest, otm) {
+  const r = latest.rules;
+  const close = latest.close;
+
+  // 构建规则检查行
+  function row(label, labelColor, desc, pass) {
+    const badge = pass
+      ? '<span class="badge-y">Y</span>'
+      : '<span class="badge-n">N</span>';
+    const valColor = pass ? '#81c784' : '#ef9a9a';
+    return `<tr><td class="rule-label" style="color:${labelColor}">${label}</td>
+      <td class="rule-val"><span style="color:${valColor}">${desc}</span>${badge}</td></tr>`;
+  }
+
+  // A 企稳双撑 三条规则
+  const macdDesc = `|MACD今| ${Math.abs(r.macd_today).toFixed(3)} ${r.macd_narrow ? '<' : '>'} |MACD昨| ${Math.abs(r.macd_yesterday).toFixed(3)}`;
+  const p5Desc = `Close ${fmt(close)} ${r.above_p5 ? '>' : '<'} P5_PP ${fmt(r.p5_pp)}`;
+  const p30Desc = `Close ${fmt(close)} ${r.above_p30 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
+
+  // B1: Close < MA20 AND Close > MA60
+  const b1_c1 = close < r.ma20;
+  const b1_c2 = close > r.ma60;
+  const b1_pass = b1_c1 && b1_c2;
+  const b1Desc = `Close ${fmt(close)} ${b1_c1 ? '<' : '>'} MA20 ${fmt(r.ma20)} & ${b1_c2 ? '>' : '<'} MA60 ${fmt(r.ma60)}`;
+
+  // B2: Vol < 50% AND |MA20距| <= 5%
+  const b2_c1 = r.hist_vol < 50;
+  const b2_c2 = Math.abs(r.ma20_dist) <= 5;
+  const b2_pass = b2_c1 && b2_c2;
+  const b2Desc = `Vol ${fmt(r.hist_vol,1)}% ${b2_c1 ? '<' : '>'} 50% & |MA20距| ${fmt(Math.abs(r.ma20_dist),2)}% ${b2_c2 ? '<=' : '>'} 5%`;
+
+  // B3: DIF < 0 AND Close > P30_PP
+  const b3_c1 = r.dif < 0;
+  const b3_c2 = close > r.p30_pp;
+  const b3_pass = b3_c1 && b3_c2;
+  const b3Desc = `DIF ${fmt(r.dif)} ${b3_c1 ? '<' : '>'} 0 & Close ${fmt(close)} ${b3_c2 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
+
+  // B4: MA20 > MA60 AND DIF < 0
+  const b4_c1 = r.ma20 > r.ma60;
+  const b4_c2 = r.dif < 0;
+  const b4_pass = b4_c1 && b4_c2;
+  const b4Desc = `MA20 ${fmt(r.ma20)} ${b4_c1 ? '>' : '<'} MA60 ${fmt(r.ma60)} & DIF ${fmt(r.dif)} ${b4_c2 ? '<' : '>'} 0`;
+
+  // 判断最终结论
+  const aPass = r.macd_narrow && r.above_p5 && r.above_p30;
+  const tierLabel = `${latest.tier} ${TIER_NAMES[latest.tier] || ''}`;
+
+  const conclusionCls = 'conclusion-sell';
+  const conclusionColor = latest.tier === 'C' ? '#78909c' : '#4caf50';
+  const conclusionNote = latest.tier === 'C'
+    ? '进入 C 兜底深虚观望，卖 25% OTM Put'
+    : `命中 ${latest.tier} 条件，卖出 Put`;
+
+  const html = `
+    <h3 style="color:#8b95a5">最新决策 <span style="color:#4fc3f7">${latest.date}</span></h3>
+    <div style="background:#141b2d;border:1px solid #253044;border-radius:8px;padding:16px;margin-top:14px">
+      <div style="font-size:14px;margin-bottom:14px">
+        <span style="color:#8b95a5">收盘价</span>
+        <span style="color:#e8ecf1;font-size:22px;font-weight:bold;margin-left:8px">${fmt(close)}</span>
+      </div>
+      <table class="rule-table">
+        ${row('A 企稳双撑', '#4fc3f7', macdDesc, r.macd_narrow)}
+        ${row('', '#4fc3f7', p5Desc, r.above_p5)}
+        ${row('', '#4fc3f7', p30Desc, r.above_p30)}
+        ${row('B1 回调均线', '#ab47bc', b1Desc, b1_pass)}
+        ${row('B2 低波整理', '#ff7043', b2Desc, b2_pass)}
+        ${row('B3 超跌支撑', '#66bb6a', b3Desc, b3_pass)}
+        ${row('B4 趋势动能弱', '#ffa726', b4Desc, b4_pass)}
+      </table>
+      <div class="${conclusionCls}">
+        <span style="color:${conclusionColor};font-size:16px;font-weight:bold">${tierLabel}</span>
+        <div style="color:#6b7b8d;font-size:11px;margin-top:4px">${conclusionNote}</div>
+      </div>
+      <div class="ops-box">
+        <table class="ops-table">
+          <tr><td style="text-align:left;color:#8b95a5">卖出日</td>
+              <td style="text-align:right">${latest.date}</td></tr>
+          <tr><td style="text-align:left;color:#8b95a5">到期日</td>
+              <td style="text-align:right">${latest.expiry_date}</td></tr>
+          <tr><td style="text-align:left;color:#8b95a5">OTM</td>
+              <td style="text-align:right;color:${conclusionColor};font-weight:bold">${latest.tier === 'A' ? '10' : latest.tier === 'C' ? '25' : '15'}%</td></tr>
+          <tr><td style="text-align:left;color:#8b95a5">行权价</td>
+              <td style="text-align:right;color:${conclusionColor};font-size:18px;font-weight:bold">${latest.tier === 'A' ? fmt(latest.strike_a) : latest.tier === 'C' ? fmt(close * 0.75) : fmt(latest.strike_b)}</td></tr>
+        </table>
+      </div>
+    </div>`;
+  document.getElementById('latestDecision').innerHTML = html;
+}
+
+/* ===== 过滤器 ===== */
+function renderFilter() {
+  const tiers = ['A','B1','B2','B3','B4','C'];
+  const labels = {A:'A',B1:'B1',B2:'B2',B3:'B3',B4:'B4',C:'C'};
+  const colors = {A:'#4fc3f7',B1:'#ab47bc',B2:'#ff7043',B3:'#66bb6a',B4:'#ffa726',C:'#78909c'};
+  document.getElementById('tierFilter').innerHTML = tiers.map(t => {
+    const cls = activeTiers.has(t) ? 'active' : '';
+    return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${colors[t]};border-color:${colors[t]}" onclick="toggleTier('${t}')">${labels[t]}</span>`;
+  }).join('');
+}
+function toggleTier(t) {
+  if (activeTiers.has(t)) activeTiers.delete(t); else activeTiers.add(t);
+  renderFilter();
+  renderTable(currentWeeks);
+}
+
+/* ===== 排序状态 ===== */
+let sortKey = null;   // 'strike' | 'expiry_close' | null
+let sortDir = 'desc'; // 'asc' | 'desc'
+
+function sortTable(key) {
+  if (sortKey === key) {
+    if (sortDir === 'desc') sortDir = 'asc';
+    else { sortKey = null; sortDir = 'desc'; } // 第三次点击恢复默认
+  } else {
+    sortKey = key;
+    sortDir = 'desc';
+  }
+  // 更新表头样式
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (sortKey && th.dataset.sort === sortKey) {
+      th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  renderTable(currentWeeks);
+}
+
+// 绑定排序点击
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => sortTable(th.dataset.sort));
+  });
+});
+
+/* ===== 渲染：逐周表格 ===== */
+function renderTable(weeks) {
+  currentWeeks = weeks;
+  let filtered = weeks.filter(w => activeTiers.has(w.tier || 'C'));
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      const va = a[sortKey] != null ? a[sortKey] : -Infinity;
+      const vb = b[sortKey] != null ? b[sortKey] : -Infinity;
+      return sortDir === 'asc' ? va - vb : vb - va;
+    });
+  }
+  const rows = filtered.map((w, idx) => {
+    const pCls = portionClass(w.portion);
+    const isPending = w.pending === true;
+    const tc = TIER_COLORS[w.tier];
+    const printHide = idx >= 8 ? ' print-hide-row' : '';
+
+    // 层级标签
+    const tierTag = tc
+      ? `<span class="tag" style="background:${tc.bg};color:${tc.color};border:1px solid ${tc.color}">${w.tier} ${w.otm}%</span>`
+      : w.tier;
+
+    // 行背景
+    const rowBg = tc ? tc.bg : 'transparent';
+    const pendingBorder = isPending ? ';border-left:3px solid #5c6bc0' : '';
+
+    // 各列值
+    const strikeCell = w.strike != null ? fmt(w.strike) : '<span class="pending-text">-</span>';
+    const expiryCell = w.expiry_date || '<span class="pending-text">-</span>';
+
+    // 到期价
+    let expiryCloseCell;
+    if (w.expiry_close != null) {
+      expiryCloseCell = fmt(w.expiry_close);
+    } else if (isPending) {
+      expiryCloseCell = '<span class="pending-text">进行中</span>';
+    } else {
+      expiryCloseCell = '-';
+    }
+
+    // 结算差比：(到期价 - 行权价) / 行权价 × 100%
+    let settleDiffCell;
+    if (w.settle_diff != null) {
+      const diffColor = w.settle_diff > 0 ? '#4caf50' : '#ef5350';
+      const diffSign = w.settle_diff > 0 ? '+' : '';
+      settleDiffCell = `<span style="color:${diffColor};font-weight:bold">${diffSign}${w.settle_diff.toFixed(2)}%</span>`;
+    } else if (isPending) {
+      settleDiffCell = '<span class="pending-text">进行中</span>';
+    } else {
+      settleDiffCell = '-';
+    }
+
+    // 平稳到期：绿色勾 / 红色叉
+    let safeCell;
+    if (w.safe_expiry === true) {
+      safeCell = '<span style="color:#4caf50;font-size:16px">✓</span>';
+    } else if (w.safe_expiry === false) {
+      safeCell = '<span style="color:#ef5350;font-size:16px">✗</span>';
+    } else if (isPending) {
+      safeCell = '<span class="pending-text">进行中</span>';
+    } else {
+      safeCell = '-';
+    }
+
+    // 期间涨跌
+    let pctCell;
+    if (w.pct_change != null) {
+      const barW = Math.min(Math.abs(w.pct_change) * 2.5, 40);
+      const barCls = w.pct_change >= 0 ? 'bar-g' : 'bar-r';
+      pctCell = `<span class="${pctClass(w.pct_change)}">${sign(w.pct_change,1)}%</span> <span class="bar ${barCls}" style="width:${barW}px"></span>`;
+    } else if (isPending) {
+      pctCell = '<span class="pending-text">进行中</span>';
+    } else {
+      pctCell = '-';
+    }
+
+    // 期间最低
+    const lowCell = w.period_low != null ? fmt(w.period_low) : (isPending ? '<span class="pending-text">进行中</span>' : '-');
+
+    // 距行权
+    let lvsCell;
+    if (w.low_vs_strike != null) {
+      const lvsCls = w.low_vs_strike >= 0 ? 'safe' : 'danger';
+      lvsCell = `<span class="${lvsCls}">${sign(w.low_vs_strike,1)}%</span>`;
+    } else if (isPending) {
+      lvsCell = '<span class="pending-text">进行中</span>';
+    } else {
+      lvsCell = '-';
+    }
+
+    return `<tr class="${printHide}" style="background:${rowBg}${pendingBorder}">
+      <td>${w.date}</td>
+      <td><span class="portion ${pCls}">P${w.portion}</span></td>
+      <td>${tierTag}</td>
+      <td>${w.otm != null ? w.otm + '%' : '-'}</td>
+      <td>${fmt(w.close)}</td>
+      <td>${strikeCell}</td>
+      <td>${expiryCell}</td>
+      <td>${expiryCloseCell}</td>
+      <td>${settleDiffCell}</td>
+      <td>${safeCell}</td>
+      <td>${pctCell}</td>
+      <td>${lowCell}</td>
+      <td>${lvsCell}</td>
+    </tr>`;
+  });
+
+  document.getElementById('weeklyBody').innerHTML = rows.join('');
+}
+
+/* ===== 内嵌数据（由 run.py 自动写入） ===== */
+const EMBEDDED_DATA = {};
+/* EMBEDDED_DATA_PLACEHOLDER */
+
+/* ===== 加载数据 ===== */
+function loadData() {
+  // 从内嵌数据中取第一个 key
+  const tickers = Object.keys(EMBEDDED_DATA);
+  if (tickers.length > 0) {
+    renderData(EMBEDDED_DATA[tickers[0]]);
+    return;
+  }
+  // 从文件名推断 ticker（如 TQQQ.html → TQQQ）
+  const match = location.pathname.match(/([A-Z0-9]+)\.html$/);
+  const ticker = match ? match[1] : 'TQQQ';
+  fetch(ticker + '.json')
+    .then(res => {
+      if (!res.ok) throw new Error('无法加载 ' + ticker + '.json（需运行 run.py 或启动本地服务器）');
+      return res.json();
+    })
+    .then(data => renderData(data))
+    .catch(err => {
+      console.error(err);
+      document.getElementById('overviewRow').innerHTML = `<div class="stat"><span class="v red">加载失败</span><span class="d">${err.message}</span></div>`;
+    });
+}
+
+function renderData(data) {
+  document.getElementById('tickerName').textContent = data.ticker || '';
+  const otm = data.otm_config || {otm_a: 0.10, otm_b: 0.15, otm_c: 0.25};
+  const pctA = (otm.otm_a * 100).toFixed(0);
+  const pctB = (otm.otm_b * 100).toFixed(0);
+  const pctC = ((otm.otm_c || 0.25) * 100).toFixed(0);
+  document.getElementById('strategyDesc').textContent =
+    `A 企稳双撑 (${pctA}% OTM) + B 弱势守底 (${pctB}% OTM) + C 兜底深虚观望 (${pctC}% OTM)`;
+  renderOverview(data.summary, data.tiers);
+  renderDecision(data.latest, otm);
+  renderFilter();
+  renderTable(data.weeks);
+}
+
+/* ===== 导出 PNG ===== */
+function exportPng() {
+  const btn = document.querySelector('.header button');
+  btn.textContent = '导出中...';
+  btn.disabled = true;
+
+  // 构建临时容器，只放需要导出的内容
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1500px;background:#0a0e17;padding:20px;color:#c8d0dc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6';
+
+  // 复制头部（去掉按钮和select）
+  const ticker = document.getElementById('tickerName').textContent || 'TQQQ';
+  const headerHtml = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+    <span style="color:#e8ecf1;font-size:26px;font-weight:bold">Lambda 策略系统</span>
+    <span style="color:#4fc3f7;font-size:20px;font-weight:bold">${ticker}</span>
+  </div>`;
+  tmp.innerHTML = headerHtml;
+
+  // 复制概览行
+  tmp.appendChild(document.getElementById('overviewRow').cloneNode(true));
+
+  // 复制决策面板
+  const box = document.querySelector('.box');
+  tmp.appendChild(box.cloneNode(true));
+
+  // 最近8周小标题
+  const label = document.createElement('div');
+  label.style.cssText = 'color:#8b95a5;font-size:14px;margin:16px 0 8px';
+  label.textContent = '最近 8 周操作明细';
+  tmp.appendChild(label);
+
+  // 复制表格，只保留前8行
+  const tableWrap = document.createElement('div');
+  const origTable = document.querySelector('table.weekly');
+  const tbl = origTable.cloneNode(true);
+  const tbody = tbl.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.forEach((r, i) => { if (i >= 8) r.remove(); });
+  tableWrap.appendChild(tbl);
+  tmp.appendChild(tableWrap);
+
+  // 复制风险提示
+  tmp.appendChild(document.querySelector('.risk-note').cloneNode(true));
+
+  document.body.appendChild(tmp);
+
+  html2canvas(tmp, {
+    backgroundColor: '#0a0e17',
+    scale: 2,
+    useCORS: true,
+    width: 1500,
+    windowWidth: 1500,
+  }).then(canvas => {
+    const link = document.createElement('a');
+    link.download = `lambda-${ticker}-${new Date().toISOString().slice(0,10)}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }).catch(err => {
+    console.error('导出失败:', err);
+    alert('导出失败: ' + err.message);
+  }).finally(() => {
+    document.body.removeChild(tmp);
+    btn.textContent = '导出';
+    btn.disabled = false;
+  });
+}
+
+/* ===== 动态加载 html2canvas ===== */
+(function(){
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+  s.onerror = function(){ console.log('html2canvas 加载失败，导出功能不可用'); };
+  document.head.appendChild(s);
+})();
+
+/* 启动 */
+loadData();
+</script>
+</body></html>
