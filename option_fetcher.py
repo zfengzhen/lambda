@@ -1,5 +1,10 @@
 """期权数据获取：OCC 合约 symbol 构建、日线 OHLC 拉取、信号交易提取"""
 import datetime
+import logging
+import time
+import requests
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.massive.com"
 STRIKE_INCREMENT = 0.5  # TQQQ 期权行权价间距（美元）
@@ -40,3 +45,55 @@ def build_occ_symbol(ticker: str, expiry_date: str, strike: float,
     strike_int = int(round(strike * 1000))
     strike_str = f"{strike_int:08d}"
     return f"O:{ticker}{date_str}{contract_type.upper()}{strike_str}"
+
+
+def fetch_option_bars(symbol: str, from_date: str, to_date: str,
+                      api_key: str) -> list[dict]:
+    """拉取期权合约日线 OHLC 数据。
+
+    使用与 fetch_client.py 相同的 /v2/aggs 端点，合约 symbol 为 OCC 格式（O: 前缀）。
+    返回空列表表示无数据或合约不存在，调用方应跳过此交易。
+
+    Args:
+        symbol: OCC 合约 symbol，如 "O:TQQQ250131P00038500"
+        from_date: 起始日期 "YYYY-MM-DD"
+        to_date:   结束日期 "YYYY-MM-DD"
+        api_key:   Massive API Key
+
+    Returns:
+        每条包含 {date, open, high, low, close} 的列表，按日期升序
+    """
+    from datetime import timezone
+
+    url = (f"{BASE_URL}/v2/aggs/ticker/{symbol}"
+           f"/range/1/day/{from_date}/{to_date}")
+    params = {"adjusted": "false", "sort": "asc", "limit": 50000, "apiKey": api_key}
+
+    for attempt in range(MAX_RETRIES):
+        resp = requests.get(url, params=params)
+        if resp.status_code == 429:
+            wait = PAGE_DELAY * (attempt + 1)
+            logger.warning(f"[{symbol}] 限流(429)，等待 {wait}s 后重试")
+            time.sleep(wait)
+            continue
+        if resp.status_code == 404:
+            logger.warning(f"[{symbol}] 合约不存在(404)")
+            return []
+        resp.raise_for_status()
+        break
+    else:
+        logger.error(f"[{symbol}] 重试 {MAX_RETRIES} 次后放弃")
+        return []
+
+    raw = resp.json().get("results", [])
+    if not raw:
+        logger.info(f"[{symbol}] 无数据")
+        return []
+
+    bars = []
+    for r in raw:
+        dt = (datetime.datetime.fromtimestamp(r["t"] / 1000, tz=timezone.utc)
+              .strftime("%Y-%m-%d"))
+        bars.append({"date": dt, "open": r["o"], "high": r["h"],
+                     "low": r["l"], "close": r["c"]})
+    return bars
