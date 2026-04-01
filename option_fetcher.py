@@ -1,5 +1,6 @@
 """期权数据获取：OCC 合约 symbol 构建、日线 OHLC 拉取、信号交易提取"""
 import datetime
+from datetime import timezone
 import logging
 import time
 import requests
@@ -63,8 +64,6 @@ def fetch_option_bars(symbol: str, from_date: str, to_date: str,
     Returns:
         每条包含 {date, open, high, low, close} 的列表，按日期升序
     """
-    from datetime import timezone
-
     url = (f"{BASE_URL}/v2/aggs/ticker/{symbol}"
            f"/range/1/day/{from_date}/{to_date}")
     params = {"adjusted": "false", "sort": "asc", "limit": 50000, "apiKey": api_key}
