@@ -151,3 +151,40 @@ class TestFindOptimalK:
     def test_raises_on_empty(self):
         with pytest.raises(ValueError, match="sweep_results 为空"):
             find_optimal_k([])
+
+
+# ── enrich_with_db ───────────────────────────────────────
+
+class TestEnrichWithDb:
+    def test_uses_db_query(self, tmp_path):
+        """enrich_with_db 从 data_store.query_option_bars 获取数据。"""
+        import data_store
+        from entry_optimizer import enrich_with_db
+
+        db_bars = [
+            {"date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
+             "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87},
+            {"date": "2025-01-07", "symbol": "O:TQQQ250131P00038500",
+             "open": 0.87, "high": 0.95, "low": 0.85, "close": 0.92},
+            {"date": "2025-01-08", "symbol": "O:TQQQ250131P00038500",
+             "open": 0.92, "high": 0.98, "low": 0.88, "close": 0.95},
+            {"date": "2025-01-09", "symbol": "O:TQQQ250131P00038500",
+             "open": 0.95, "high": 1.00, "low": 0.90, "close": 0.97},
+            {"date": "2025-01-10", "symbol": "O:TQQQ250131P00038500",
+             "open": 0.97, "high": 1.02, "low": 0.93, "close": 0.99},
+        ]
+        with patch("entry_optimizer.data_store.query_option_bars",
+                   return_value=db_bars):
+            result = enrich_with_db([COMPLETE_TRADE])
+
+        assert len(result) == 1
+        assert result[0]["data_complete"] is True
+        assert result[0]["mon_close_option"] == 0.87
+        assert result[0]["week_high"] == 1.02
+
+    def test_data_incomplete_when_db_empty(self):
+        from entry_optimizer import enrich_with_db
+        with patch("entry_optimizer.data_store.query_option_bars",
+                   return_value=[]):
+            result = enrich_with_db([COMPLETE_TRADE])
+        assert result[0]["data_complete"] is False
