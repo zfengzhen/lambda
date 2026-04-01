@@ -22,8 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB
 ├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
 ├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
-├── option_fetcher.py    # 期权合约 OHLC 查询（DB → Flat Files → REST 三级优先）
-├── entry_optimizer.py   # 入场优化：基于期权数据推导最优执行价
+├── notify.py            # 通知推送
 │
 ├── output/              # 运行产物（gitignore）
 │   ├── market_data.duckdb        # 本地期权/股票数据库
@@ -35,7 +34,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── .venv/               # Python 虚拟环境（不提交）
 └── docs/                # 文档 + API 参考
     ├── api/             # API 文档（Massive 等）
-    └── strategy-*.md/html  # 策略说明文档
+    ├── strategy-*.md/html  # 策略说明文档
+    └── entry-timing-research.md  # 入场限价优化研究报告
 ```
 
 ## 数据流
@@ -52,7 +52,6 @@ Massive REST API        → DuckDB equity_bars   # 股票日K
 ```
 
 - `run.py` 每次运行先调用 `ensure_synced()`，空库同步近 2 年，有数据则增量补齐
-- `option_fetcher.py` 查询优先级：DuckDB → Flat Files 缓存 → REST API
 - 增量同步基于 `sync_log` 表（月级，`data_type='option_month'`）
 
 ## API 文档
@@ -66,30 +65,11 @@ Massive REST API        → DuckDB equity_bars   # 股票日K
 - 调用富途 API 前需在本地启动 OpenD 网关进程；可使用 `install-opend` skill 进行安装配置
 - 开发时可使用 `openapi` skill 快速查询富途交易/行情接口
 
-## 虚拟环境
-
-项目使用 `.venv` 虚拟环境管理 Python 依赖，首次克隆后需初始化：
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-后续每次打开项目只需激活：
-
-```bash
-source .venv/bin/activate
-```
-
 ## 常用命令
 
 ```bash
-# 激活虚拟环境
+# 虚拟环境（首次需 python3 -m venv .venv && pip install -r requirements.txt）
 source .venv/bin/activate
-
-# 安装依赖（含 pandas/numpy/requests/pytest/playwright/duckdb/boto3）
-pip install -r requirements.txt
 
 # ── Lambda 策略（Sell Put）──
 python run.py              # 默认 TQQQ：自动同步 → 策略计算 → JSON → HTML → 截图 PNG
