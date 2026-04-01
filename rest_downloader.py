@@ -35,6 +35,7 @@ def fetch_and_store_equity(ticker: str, from_date: str, to_date: str,
     params = {"adjusted": "false", "sort": "asc",
               "limit": 50000, "apiKey": api_key}
 
+    resp = None
     for attempt in range(MAX_RETRIES):
         resp = requests.get(url, params=params)
         if resp.status_code == 429:
@@ -42,7 +43,11 @@ def fetch_and_store_equity(ticker: str, from_date: str, to_date: str,
             logger.warning(f"[rest] {ticker} 限流(429)，等待 {wait}s")
             time.sleep(wait)
             continue
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            logger.error(f"[rest] {ticker} HTTP 错误: {e}")
+            return 0
         break
     else:
         logger.error(f"[rest] {ticker} 重试 {MAX_RETRIES} 次后放弃")
@@ -55,21 +60,23 @@ def fetch_and_store_equity(ticker: str, from_date: str, to_date: str,
 
     rows = []
     for r in raw:
-        # t 为毫秒级 UTC 时间戳，转换为 YYYY-MM-DD 日期字符串
-        dt = datetime.datetime.fromtimestamp(
-            r["t"] / 1000, tz=datetime.timezone.utc
-        ).strftime("%Y-%m-%d")
-        rows.append({
-            "date": dt,
-            "ticker": ticker,
-            "open": r["o"],
-            "high": r["h"],
-            "low": r["l"],
-            "close": r["c"],
-            "volume": r.get("v"),
-            "vwap": r.get("vw"),
-            "transactions": r.get("n"),
-        })
+        try:
+            dt = datetime.datetime.fromtimestamp(
+                r["t"] / 1000, tz=datetime.timezone.utc
+            ).strftime("%Y-%m-%d")
+            rows.append({
+                "date": dt,
+                "ticker": ticker,
+                "open": r["o"],
+                "high": r["h"],
+                "low": r["l"],
+                "close": r["c"],
+                "volume": r.get("v"),
+                "vwap": r.get("vw"),
+                "transactions": r.get("n"),
+            })
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[rest] {ticker} 跳过异常行: {e} — {r}")
 
     written = data_store.upsert_equity_bars(rows)
     logger.info(f"[rest] {ticker} {from_date}~{to_date}: {written} 行写入 equity_bars")

@@ -70,6 +70,11 @@ def test_fetch_and_store_equity_handles_429(tmp_path):
                 "TQQQ", "2025-01-06", "2025-01-07", "test_api_key"
             )
     assert count == 2
+    import duckdb
+    con = duckdb.connect(str(db_path))
+    rows_in_db = con.execute("SELECT COUNT(*) FROM equity_bars").fetchone()[0]
+    con.close()
+    assert rows_in_db == 2
 
 
 def test_sync_equity_calls_each_ticker(tmp_path):
