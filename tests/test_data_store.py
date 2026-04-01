@@ -149,7 +149,25 @@ def test_write_sync_log(tmp_db):
     with patch.object(data_store, "DB_PATH", tmp_db):
         data_store.write_sync_log("2025-01-06", "option", 260000, "ok")
     con = duckdb.connect(str(tmp_db))
-    row = con.execute("SELECT * FROM sync_log").fetchone()
+    row = con.execute("SELECT date FROM sync_log").fetchone()
     con.close()
     assert row is not None
-    assert row[3] == datetime.date(2025, 1, 6)  # date column
+    assert row[0] == datetime.date(2025, 1, 6)
+
+
+def test_get_latest_equity_date(tmp_db):
+    rows = [
+        {"date": "2025-01-06", "ticker": "TQQQ", "open": 42.0,
+         "high": 43.0, "low": 41.0, "close": 42.5,
+         "volume": 1000000, "vwap": 42.3, "transactions": 5000},
+    ]
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_equity_bars(rows)
+        result = data_store.get_latest_synced_date("equity")
+    assert result == "2025-01-06"
+
+
+def test_get_latest_synced_date_invalid_type(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        with pytest.raises(ValueError, match="Unknown data_type"):
+            data_store.get_latest_synced_date("invalid")
