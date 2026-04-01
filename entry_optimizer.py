@@ -45,7 +45,10 @@ def enrich_with_option_data(trades: list[dict], api_key: str,
     for trade in trades:
         symbol = build_occ_symbol(ticker, trade["expiry"], trade["strike"], "P")
 
-        # 信号周：周一（week_start）到周五（+4 天）
+        # 信号周：信号日（week_start，通常为周一；节假日周可能为周二）到 +4 日历天。
+        # offset=0 = 信号日收盘价（限价单参考价 P），
+        # offset=1..4 = 后续交易日最高价（挂单执行窗口）。
+        # 节假日周下字段标签（tue_high 等）与日历日期不对应，但算法语义正确。
         mon = datetime.date.fromisoformat(trade["week_start"])
         fri = mon + datetime.timedelta(days=4)
         bars = fetch_option_bars(symbol, str(mon), str(fri), api_key)
