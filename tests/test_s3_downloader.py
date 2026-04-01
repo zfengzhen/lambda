@@ -45,20 +45,20 @@ def test_trading_days_range():
 
 
 def test_download_and_store_day_success(tmp_path, mock_s3):
-    sample_rows = [
+    gz_data = _make_csv_gz([
         {"ticker": "O:TQQQ250131P00038500", "volume": "10",
          "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
          "window_start": "1000", "transactions": "3"},
         {"ticker": "O:QQQ250131P00400000", "volume": "5",
          "open": "1.0", "close": "1.2", "high": "1.5", "low": "0.9",
          "window_start": "1000", "transactions": "2"},
-    ]
-    mock_s3.get_object.return_value = {
-        "Body": io.BytesIO(_make_csv_gz(sample_rows))
-    }
+    ])
+    cache_file = tmp_path / "2025-01-06.csv.gz"
+    cache_file.write_bytes(gz_data)
 
     db_path = tmp_path / "test.duckdb"
-    with patch.object(data_store, "DB_PATH", db_path):
+    with patch.object(data_store, "DB_PATH", db_path), \
+         patch("s3_downloader._download_day_file", return_value=cache_file):
         data_store.init_db()
         count = s3_downloader.download_and_store_day("2025-01-06", mock_s3)
 
@@ -70,11 +70,12 @@ def test_download_and_store_day_success(tmp_path, mock_s3):
     assert rows == 2
 
 
-def test_download_and_store_day_skips_holiday(mock_s3):
-    mock_s3.get_object.side_effect = ClientError(
-        {"Error": {"Code": "NoSuchKey", "Message": ""}}, "GetObject"
-    )
-    count = s3_downloader.download_and_store_day("2025-01-01", mock_s3)
+def test_download_and_store_day_skips_holiday(tmp_path, mock_s3):
+    db_path = tmp_path / "test.duckdb"
+    with patch.object(data_store, "DB_PATH", db_path), \
+         patch("s3_downloader._download_day_file", return_value=None):
+        data_store.init_db()
+        count = s3_downloader.download_and_store_day("2025-01-01", mock_s3)
     assert count == 0
 
 
@@ -96,38 +97,22 @@ def test_download_and_store_day_skips_existing(tmp_path, mock_s3):
 
 
 def test_sync_options_processes_date_range(tmp_path, mock_s3):
-    sample_rows = [
-        {"ticker": "O:TQQQ250131P00038500", "volume": "5",
-         "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
-         "window_start": "1000", "transactions": "2"},
-    ]
-    gz_data = _make_csv_gz(sample_rows)
-    mock_s3.get_object.side_effect = lambda **kw: {"Body": io.BytesIO(gz_data)}
-    db_path = tmp_path / "test.duckdb"
-    with patch.object(data_store, "DB_PATH", db_path):
-        data_store.init_db()
-        with patch("s3_downloader.make_s3_client", return_value=mock_s3):
-            s3_downloader.sync_options("2025-01-06", "2025-01-07")
-    # 两个交易日各调用一次
-    assert mock_s3.get_object.call_count == 2
-
-
-def test_sync_options_parallel(tmp_path, mock_s3):
-    """workers>1 时并行下载，结果写入 DB。"""
     gz_data = _make_csv_gz([
         {"ticker": "O:TQQQ250131P00038500", "volume": "5",
          "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
          "window_start": "1000", "transactions": "2"},
     ])
-    mock_s3.get_object.side_effect = lambda **kw: {"Body": io.BytesIO(gz_data)}
+    call_count = {"n": 0}
+    def fake_download(date_str, s3_client):
+        call_count["n"] += 1
+        f = tmp_path / f"{date_str}.csv.gz"
+        f.write_bytes(gz_data)
+        return f
+
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
-        with patch("s3_downloader.make_s3_client", return_value=mock_s3):
-            s3_downloader.sync_options("2025-01-06", "2025-01-07", workers=4)
-    assert mock_s3.get_object.call_count == 2
-    import duckdb
-    con = duckdb.connect(str(db_path))
-    rows = con.execute("SELECT COUNT(*) FROM option_bars").fetchone()[0]
-    con.close()
-    assert rows == 2
+        with patch("s3_downloader.make_s3_client", return_value=mock_s3), \
+             patch("s3_downloader._download_day_file", side_effect=fake_download):
+            s3_downloader.sync_options("2025-01-06", "2025-01-07")
+    assert call_count["n"] == 2

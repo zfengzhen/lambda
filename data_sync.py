@@ -26,21 +26,19 @@ def date_range_from_years(years: int) -> tuple[str, str]:
     return str(from_date), str(to_date)
 
 
-def full_sync(years: int, tickers: list[str], api_key: str,
-              workers: int = 1) -> None:
+def full_sync(years: int, tickers: list[str], api_key: str) -> None:
     """全量同步：S3 期权 + REST 股票。"""
     from_date, to_date = date_range_from_years(years)
     logger.info(f"全量同步 {from_date} ~ {to_date}，标的: {tickers}")
 
     data_store.init_db()
-    s3_downloader.sync_options(from_date, to_date, workers=workers)
+    s3_downloader.sync_options(from_date, to_date)
 
     if tickers and api_key:
         rest_downloader.sync_equity(tickers, from_date, to_date, api_key)
 
 
-def incremental_sync(tickers: list[str], api_key: str,
-                     workers: int = 1) -> None:
+def incremental_sync(tickers: list[str], api_key: str) -> None:
     """增量同步：从上次最新日期的次日同步到昨天。
 
     无历史数据时默认补最近 30 天。
@@ -61,7 +59,7 @@ def incremental_sync(tickers: list[str], api_key: str,
         return
 
     logger.info(f"增量同步 {from_date} ~ {to_date}")
-    s3_downloader.sync_options(from_date, to_date, workers=workers)
+    s3_downloader.sync_options(from_date, to_date)
 
     if tickers and not api_key:
         logger.warning("未设置 MASSIVE_API_KEY，跳过股票数据同步")
@@ -82,20 +80,16 @@ def main() -> int:
                         help="股票标的列表，如 TQQQ QQQ")
     parser.add_argument("--incremental", action="store_true",
                         help="增量同步模式")
-    parser.add_argument("--workers", type=int, default=8,
-                        help="S3 并行下载线程数（默认 8）")
     args = parser.parse_args()
 
     api_key = os.environ.get("MASSIVE_API_KEY", "")
 
     if args.incremental:
-        incremental_sync(tickers=args.tickers, api_key=api_key,
-                         workers=args.workers)
+        incremental_sync(tickers=args.tickers, api_key=api_key)
     else:
         if not api_key and args.tickers:
             print("警告：未设置 MASSIVE_API_KEY，跳过股票数据同步")
-        full_sync(years=args.years, tickers=args.tickers, api_key=api_key,
-                  workers=args.workers)
+        full_sync(years=args.years, tickers=args.tickers, api_key=api_key)
 
     return 0
 
