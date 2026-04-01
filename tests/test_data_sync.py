@@ -42,6 +42,7 @@ def test_incremental_sync_starts_from_next_day(tmp_path):
             data_sync.incremental_sync(tickers=["TQQQ"], api_key="key")
 
     # 起始日期是已有最新日期的次日
+    mock_s3.assert_called_once()
     s3_from = mock_s3.call_args.args[0]
     assert s3_from == "2025-06-02"
 

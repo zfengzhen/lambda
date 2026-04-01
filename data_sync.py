@@ -22,7 +22,7 @@ def date_range_from_years(years: int) -> tuple[str, str]:
     """返回 (from_date, to_date)，to_date 为昨天，from_date 为 years 年前。"""
     today = datetime.date.today()
     to_date = today - datetime.timedelta(days=1)
-    from_date = today.replace(year=today.year - years)
+    from_date = today - datetime.timedelta(days=years * 365)
     return str(from_date), str(to_date)
 
 
@@ -61,6 +61,8 @@ def incremental_sync(tickers: list[str], api_key: str) -> None:
     logger.info(f"增量同步 {from_date} ~ {to_date}")
     s3_downloader.sync_options(from_date, to_date)
 
+    if tickers and not api_key:
+        logger.warning("未设置 MASSIVE_API_KEY，跳过股票数据同步")
     if tickers and api_key:
         rest_downloader.sync_equity(tickers, from_date, to_date, api_key)
 
