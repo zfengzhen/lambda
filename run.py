@@ -1,11 +1,9 @@
 """
-入口脚本：拉取数据 → 策略计算 → 输出 JSON → 内嵌到 HTML → 截图 PNG
+入口脚本：同步数据 → 策略计算 → 输出 JSON → 内嵌到 HTML → 截图 PNG
 
 用法:
-    python run.py              # 默认 TQQQ，增量拉取
+    python run.py              # 默认 TQQQ
     python run.py TQQQ QQQ    # 多标的批量运行
-    python run.py --full       # 全量拉取
-    python run.py --years 3    # 指定回溯年数
 """
 import argparse
 import base64
@@ -13,10 +11,11 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 
+import data_store
 from strategy import (
     group_by_week,
     backtest_weeks,
@@ -48,75 +47,20 @@ def setup_logging():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-def bars_to_daily_df(bars: list[dict]) -> pd.DataFrame:
-    """将 API 返回的日K原始数据转为 DataFrame"""
-    df = pd.DataFrame(bars)
-    df = df.rename(columns={
-        "o": "open", "h": "high", "l": "low", "c": "close",
-        "v": "volume", "vw": "vwap", "n": "transactions", "t": "timestamp",
-    })
-    df["date"] = (
-        pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-        .dt.tz_convert("US/Eastern")
-        .dt.strftime("%Y-%m-%d")
-    )
-    df = df[["date", "open", "high", "low", "close", "volume", "vwap", "transactions"]]
-    return df.sort_values("date").reset_index(drop=True)
-
-
-def load_existing_data(ticker: str) -> dict | None:
-    """读取已有的 JSON 数据文件，不存在则返回 None"""
-    json_path = os.path.join(DATA_DIR, f"{ticker}.json")
-    if not os.path.exists(json_path):
-        return None
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def fetch_daily_bars(ticker: str, years: int, api_key: str, full: bool = False) -> pd.DataFrame | None:
-    """拉取日K数据，支持增量。返回完整的 DataFrame（含指标），失败返回 None。"""
-    from fetch_client import fetch_bars
+def fetch_daily_bars(ticker: str, api_key: str) -> pd.DataFrame | None:
+    """从 DuckDB 读取日K（自动触发增量同步）。返回含指标的 DataFrame，失败返回 None。"""
+    from data_sync import ensure_synced
     from indicators import add_ma, add_macd, add_dynamic_pivot
 
-    to_date = datetime.now().strftime("%Y-%m-%d")
+    ensure_synced([ticker], api_key)
 
-    if not full:
-        existing = load_existing_data(ticker)
-        if existing and "daily_bars" in existing:
-            last_date = existing["data_range"][1]
-            from_date = (pd.to_datetime(last_date) + timedelta(days=1)).strftime("%Y-%m-%d")
-            if from_date >= to_date:
-                logger.info(f"[{ticker}] 数据已是最新，无需拉取")
-                df = pd.DataFrame(existing["daily_bars"])
-                df = add_ma(df)
-                df = add_macd(df)
-                df = add_dynamic_pivot(df)
-                return df
-            logger.info(f"[{ticker}] 增量拉取 ({from_date} ~ {to_date})...")
-            bars = fetch_bars(ticker, "daily", from_date, to_date, api_key)
-            if bars:
-                new_df = bars_to_daily_df(bars)
-                old_df = pd.DataFrame(existing["daily_bars"])
-                merged = pd.concat([old_df, new_df], ignore_index=True)
-                merged = merged.drop_duplicates(subset=["date"]).sort_values("date").reset_index(drop=True)
-                logger.info(f"[{ticker}] 增量获取 {len(bars)} 条，合并后 {len(merged)} 条")
-            else:
-                logger.info(f"[{ticker}] 增量无新数据")
-                merged = pd.DataFrame(existing["daily_bars"])
-            df = add_ma(merged)
-            df = add_macd(df)
-            df = add_dynamic_pivot(df)
-            return df
-
-    # 全量拉取
-    from_date = (datetime.now() - timedelta(days=365 * years)).strftime("%Y-%m-%d")
-    logger.info(f"[{ticker}] 全量拉取 ({from_date} ~ {to_date})...")
-    bars = fetch_bars(ticker, "daily", from_date, to_date, api_key)
-    if not bars:
-        logger.warning(f"[{ticker}] API 未返回数据")
+    rows = data_store.query_equity_bars(ticker, "1900-01-01",
+                                        datetime.now().strftime("%Y-%m-%d"))
+    if not rows:
+        logger.warning(f"[{ticker}] DuckDB 无数据")
         return None
-    df = bars_to_daily_df(bars)
-    logger.info(f"[{ticker}] 获取 {len(bars)} 根日K")
+
+    df = pd.DataFrame(rows)
     df = add_ma(df)
     df = add_macd(df)
     df = add_dynamic_pivot(df)
@@ -124,7 +68,7 @@ def fetch_daily_bars(ticker: str, years: int, api_key: str, full: bool = False) 
 
 
 def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
-    """DataFrame → 策略计算 → 返回结果 dict（含 daily_bars）"""
+    """DataFrame → 策略计算 → 返回结果 dict"""
     df["hist_vol"] = df["close"].rolling(window=21, min_periods=21).apply(
         lambda x: compute_hist_vol(pd.Series(x.values), window=20), raw=False
     )
@@ -142,16 +86,11 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
     tiers = compute_tiers(weeks, otm_a=otm_a, otm_b=otm_b, otm_c=otm_c)
     latest = compute_latest(weekly_rows, df, otm_a=otm_a, otm_b=otm_b, otm_c=otm_c)
 
-    # 提取原始日K数据（不含指标列），用于增量拉取
-    base_cols = ["date", "open", "high", "low", "close", "volume", "vwap", "transactions"]
-    daily_bars = df[base_cols].to_dict(orient="records")
-
     dates = pd.to_datetime(df["date"])
     return {
         "ticker": ticker,
         "generated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "data_range": [dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d")],
-        "daily_bars": daily_bars,
         "otm_config": {"otm_a": otm_a, "otm_b": otm_b, "otm_c": otm_c},
         "summary": summary,
         "tiers": tiers,
@@ -161,7 +100,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
 
 
 def save_json(ticker: str, result: dict):
-    """保存 JSON 到 data/ 目录"""
+    """保存 JSON 到 output/ 目录"""
     os.makedirs(DATA_DIR, exist_ok=True)
     json_path = os.path.join(DATA_DIR, f"{ticker}.json")
     with open(json_path, "w", encoding="utf-8") as f:
@@ -180,11 +119,11 @@ def load_template() -> str | None:
 
 
 def embed_to_html(ticker: str, result: dict, template_html: str):
-    """将策略结果（不含 daily_bars）内嵌到模板，生成 output/{TICKER}.html"""
+    """将策略结果内嵌到模板，生成 output/{TICKER}.html"""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     html_path = os.path.join(OUTPUT_DIR, f"{ticker}.html")
 
-    # HTML 中不嵌入 daily_bars，太大
+    # 过滤掉 daily_bars（如有），避免嵌入过大数据
     html_data = {k: v for k, v in result.items() if k != "daily_bars"}
     data_str = json.dumps(html_data, ensure_ascii=False, indent=2)
 
@@ -316,53 +255,29 @@ def main():
     parser = argparse.ArgumentParser(description="Lambda Strategy — Sell Put 回测")
     parser.add_argument("tickers", nargs="*", default=["TQQQ"],
                         help="标的代码（默认 TQQQ），可指定多个")
-    parser.add_argument("--years", type=int, default=10,
-                        help="回溯年数（默认 10）")
-    parser.add_argument("--full", action="store_true",
-                        help="全量拉取数据（默认增量）")
     args = parser.parse_args()
 
     setup_logging()
-    mode = "全量" if args.full else "增量"
-
-    api_key = os.environ.get("MASSIVE_API_KEY")
+    api_key = os.environ.get("MASSIVE_API_KEY", "")
     template_html = load_template()
 
     for ticker in args.tickers:
         ticker = ticker.upper()
-        logger.info(f"===== {ticker} =====  years={args.years}, 模式={mode}")
+        logger.info(f"===== {ticker} =====")
 
-        # 拉取数据
-        if api_key:
-            df = fetch_daily_bars(ticker, args.years, api_key, full=args.full)
-        else:
-            logger.info(f"[{ticker}] 未设置 MASSIVE_API_KEY，尝试使用本地 JSON 数据")
-            existing = load_existing_data(ticker)
-            if existing and "daily_bars" in existing:
-                from indicators import add_ma, add_macd, add_dynamic_pivot
-                df = pd.DataFrame(existing["daily_bars"])
-                df = add_ma(df)
-                df = add_macd(df)
-                df = add_dynamic_pivot(df)
-            else:
-                logger.warning(f"[{ticker}] 无 API Key 且无本地数据，跳过")
-                continue
-
+        df = fetch_daily_bars(ticker, api_key)
         if df is None:
             continue
 
-        # 策略计算 → JSON
         result = compute_strategy(ticker, df)
         if result is None:
             continue
 
         save_json(ticker, result)
 
-        # 生成 HTML
         if template_html:
             embed_to_html(ticker, result, template_html)
 
-        # 截图 PNG
         capture_screenshot(ticker, result)
 
     logger.info("全部完成")

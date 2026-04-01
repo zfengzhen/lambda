@@ -4,4 +4,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .DS_Store
-output/
+output/*.json
+output/*.html
+output/*.png
+output/flat_files_cache/
