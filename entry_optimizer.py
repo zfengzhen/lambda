@@ -6,12 +6,13 @@
     python entry_optimizer.py --output report.txt   # 保存报告到文件
 
 数据来源优先级:
-    1. Flat Files（S3，完整历史）— 需设置 MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY
-    2. REST API（近 4 个月）     — 需设置 MASSIVE_API_KEY
+    1. 本地 DuckDB（output/market_data.duckdb，最快，无网络）— 需先运行 data_sync.py
+    2. Flat Files（S3，完整历史）— 需设置 MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY
+    3. REST API（近 4 个月）     — 需设置 MASSIVE_API_KEY
 
 前置条件:
     1. 已运行 python run.py 生成 output/TQQQ.json
-    2. 至少设置上述其中一组环境变量
+    2. 至少满足上述其中一个数据来源条件
 """
 import datetime
 import json
@@ -20,6 +21,7 @@ import os
 
 import numpy as np
 
+import data_store
 from option_fetcher import build_occ_symbol, fetch_option_bars, get_signal_trades
 
 logger = logging.getLogger(__name__)
@@ -130,6 +132,24 @@ def enrich_with_flat_files(trades: list[dict], s3_client,
 
     def fetch_fn(symbol, from_date, to_date):
         return fetch_option_bars_flat(symbol, from_date, to_date, s3_client)
+
+    return _enrich(trades, ticker, fetch_fn)
+
+
+def enrich_with_db(trades: list[dict], ticker: str = "TQQQ") -> list[dict]:
+    """通过本地 DuckDB 富化信号交易（最快，无网络开销）。
+
+    Args:
+        trades: get_signal_trades() 输出
+        ticker: 标的代码（默认 TQQQ）
+
+    Returns:
+        trades 的副本，追加期权日线字段。
+    """
+    def fetch_fn(symbol, from_date, to_date):
+        bars = data_store.query_option_bars(symbol, from_date, to_date)
+        return [{"date": b["date"], "open": b["open"], "high": b["high"],
+                 "low": b["low"], "close": b["close"]} for b in bars]
 
     return _enrich(trades, ticker, fetch_fn)
 
@@ -288,9 +308,13 @@ def main() -> int:
     trades = get_signal_trades(data["weeks"])
     print(f"信号交易: {len(trades)} 笔")
 
-    # 优先使用 Flat Files（完整历史）；无 S3 凭据时降级到 REST API（近 4 个月）
-    s3_access_key = os.environ.get("MASSIVE_S3_ACCESS_KEY")
-    if s3_access_key:
+    # 数据来源优先级：本地 DB > S3 > REST API
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "output", "market_data.duckdb")
+    if os.path.exists(db_path):
+        print("数据来源: 本地 DuckDB")
+        enriched = enrich_with_db(trades, ticker=args.ticker.upper())
+    elif os.environ.get("MASSIVE_S3_ACCESS_KEY"):
         from flat_file_fetcher import make_s3_client
         s3_client = make_s3_client()
         print("数据来源: Flat Files（S3）")
@@ -298,7 +322,7 @@ def main() -> int:
     else:
         api_key = os.environ.get("MASSIVE_API_KEY")
         if not api_key:
-            print("错误：未设置 MASSIVE_S3_ACCESS_KEY 或 MASSIVE_API_KEY 环境变量")
+            print("错误：未找到本地 DB，且未设置 S3 或 REST API 凭据")
             return 1
         print("数据来源: REST API（近 4 个月）")
         enriched = enrich_with_option_data(trades, api_key, ticker=args.ticker.upper())

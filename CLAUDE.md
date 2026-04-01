@@ -11,15 +11,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 项目结构
 
 ```
-lambda/
-├── run.py               # 唯一入口：拉取数据 → 策略计算 → JSON → HTML → 截图 PNG
+├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML → 截图 PNG
 ├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C)、OTM推导、回测
-├── fetch_client.py      # Massive API 多周期K线拉取
+├── fetch_client.py      # Massive REST API 多周期K线拉取
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
+│
+├── data_sync.py         # 数据同步 CLI：全量/增量/单月 调度入口
+├── data_store.py        # DuckDB 本地存储：建表、写入、查询（option_bars / equity_bars）
+├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB
+├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
+├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
+├── option_fetcher.py    # 期权合约 OHLC 查询（DB → Flat Files → REST 三级优先）
+├── entry_optimizer.py   # 入场优化：基于期权数据推导最优执行价
+│
 ├── output/              # 运行产物（gitignore）
-│   ├── {TICKER}.json    # 策略数据（含 daily_bars，用于增量拉取）
-│   └── {TICKER}.html    # 可视化报告
+│   ├── market_data.duckdb        # 本地期权/股票数据库
+│   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（按日期命名）
+│   ├── {TICKER}.json             # 策略数据（含 daily_bars，用于增量拉取）
+│   └── {TICKER}.html             # 可视化报告
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖
 ├── .venv/               # Python 虚拟环境（不提交）
@@ -30,12 +40,20 @@ lambda/
 
 ## 数据流
 
+**策略报告（run.py）：**
 ```
-fetch API → DataFrame(内存) → 指标计算 → 策略计算 → JSON(output/) → 内嵌到 HTML
+Massive REST API → DataFrame(内存) → 指标计算 → 策略计算 → JSON(output/) → HTML
 ```
 
-- 无 CSV 中间步骤，JSON 中 `daily_bars` 字段存储原始日K数据
-- 增量拉取基于 JSON 的 `data_range[1]`（上次最新日期）
+**本地数据库（data_sync.py）：**
+```
+S3 Flat Files (.csv.gz) → DuckDB option_bars   # 期权日K，按月批量写入
+Massive REST API        → DuckDB equity_bars   # 股票日K
+```
+
+- `run.py` 走 JSON 缓存路径，与 DuckDB 独立
+- `option_fetcher.py` 查询优先级：DuckDB → Flat Files 缓存 → REST API
+- 增量同步基于 `sync_log` 表（月级，`data_type='option_month'`）
 
 ## API 文档
 
@@ -70,7 +88,7 @@ source .venv/bin/activate
 # 激活虚拟环境
 source .venv/bin/activate
 
-# 安装依赖（含 pandas/numpy/requests/pytest/playwright）
+# 安装依赖（含 pandas/numpy/requests/pytest/playwright/duckdb/boto3）
 pip install -r requirements.txt
 
 # ── Lambda 策略（Sell Put）──
@@ -83,13 +101,32 @@ python run.py --years 3    # 指定回溯年数
 # 截图依赖 Playwright + Chromium（首次需安装，缺失时自动跳过不影响主流程）
 # pip install playwright && playwright install chromium
 
+# ── 本地数据库同步 ──
+python data_sync.py --month 2024-04 --tickers TQQQ QQQ  # 同步指定月份
+python data_sync.py --tickers TQQQ QQQ                  # 全量同步近 2 年
+python data_sync.py --incremental --tickers TQQQ         # 增量补齐到昨天
+python data_sync.py --incremental                        # 仅期权，不指定标的
+
 # 运行测试
 python -m pytest tests/ -v
 ```
 
 ## 环境变量
 
-- `MASSIVE_API_KEY` — Massive API 密钥，运行数据拉取前必须设置
+- `MASSIVE_API_KEY` — Massive REST API 密钥，`run.py` 和股票同步必须设置
+- `MASSIVE_S3_ACCESS_KEY` — S3 Access Key，期权 Flat Files 下载必须设置
+- `MASSIVE_S3_SECRET_KEY` — S3 Secret Key，期权 Flat Files 下载必须设置
+- `MASSIVE_S3_ENDPOINT` — 可选，默认 `https://files.massive.com`
+- `MASSIVE_S3_BUCKET` — 可选，默认 `flatfiles`
+
+所有 key 存放在 `~/.zshrc`，使用前 `source ~/.zshrc`。
+
+## Gotchas
+
+- **月级 sync_log 用独立 data_type**：`sync_options` 写入 sync_log 时 `data_type='option_month'`，键为月份第一天（如 `2024-04-01`）。若误用 `'option'`，会与旧日级记录冲突，导致整月被错误跳过。
+- **flat_files_cache 是永久缓存**：`output/flat_files_cache/*.csv.gz` 不会自动清理，重跑直接复用，无需重新下载。
+- **INSERT OR IGNORE**：`insert_option_bars_from_csv` 使用 `INSERT OR IGNORE`，同月重跑安全，不会报主键冲突。
+- **run.py 与 DuckDB 独立**：`run.py` 走 JSON 缓存，不读写 `market_data.duckdb`，两套数据互不影响。
 
 ## 开发与提交规范
 
