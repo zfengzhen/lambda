@@ -10,11 +10,13 @@
     2. 设置 MASSIVE_API_KEY 环境变量
 """
 import datetime
+import json
 import logging
+import os
 
 import numpy as np
 
-from option_fetcher import build_occ_symbol, fetch_option_bars
+from option_fetcher import build_occ_symbol, fetch_option_bars, get_signal_trades
 
 logger = logging.getLogger(__name__)
 
@@ -150,3 +152,132 @@ def find_optimal_k(sweep_results: list[dict]) -> dict:
     if not sweep_results:
         raise ValueError("sweep_results 为空")
     return max(sweep_results, key=lambda r: r["total_premium"])
+
+
+def print_report(trades: list[dict], sweep_results: list[dict],
+                 k_star: dict) -> str:
+    """生成人类可读的优化报告。
+
+    Args:
+        trades:        enrich_with_option_data() 输出
+        sweep_results: sweep_k() 输出（全量）
+        k_star:        find_optimal_k() 输出
+
+    Returns:
+        报告字符串（可直接 print 或写入文件）
+    """
+    valid = [t for t in trades if t.get("data_complete")]
+    n_valid = len(valid)
+    n_skip = len(trades) - n_valid
+
+    baseline = next((r for r in sweep_results if abs(r["k"] - 1.0) < 0.001), None)
+
+    # 分层最优 k
+    layer_lines = []
+    for layer in ["A", "B1", "B2", "B3", "B4"]:
+        layer_trades = [t for t in valid if t["layer"] == layer]
+        if not layer_trades:
+            continue
+        layer_sweep = sweep_k(layer_trades)
+        lk = find_optimal_k(layer_sweep) if layer_sweep else None
+        if lk:
+            layer_lines.append(
+                f"  {layer:<4} ({len(layer_trades)} 笔)  "
+                f"k={lk['k']:.2f}  "
+                f"成交率={lk['fill_rate']*100:.0f}%  "
+                f"总权利金={lk['total_premium']:.4f}"
+            )
+
+    lines = [
+        "=" * 60,
+        "Lambda 策略 · 入场限价优化报告",
+        "=" * 60,
+        f"有效交易: {n_valid} 笔  （跳过 {n_skip} 笔数据不完整）",
+        "",
+        "── 全局最优 ──",
+        f"k_star        : {k_star['k']:.2f}",
+        f"成交率        : {k_star['fill_rate']*100:.1f}%"
+        f"  ({k_star['fill_count']}/{n_valid} 笔)",
+        f"总权利金      : {k_star['total_premium']:.4f}",
+    ]
+
+    if baseline:
+        gain = k_star["total_premium"] - baseline["total_premium"]
+        pct = gain / baseline["total_premium"] * 100 if baseline["total_premium"] else 0
+        miss = baseline["fill_count"] - k_star["fill_count"]
+        lines += [
+            "",
+            "── 对比市价单 (k=1.0) ──",
+            f"市价总权利金  : {baseline['total_premium']:.4f}",
+            f"额外收益      : +{gain:.4f}  (+{pct:.1f}%)",
+            f"损失成交笔数  : {miss} 笔",
+        ]
+
+    if layer_lines:
+        lines += ["", "── 分层最优 k ──"] + layer_lines
+
+    lines += [
+        "",
+        "── 实盘操作规则 ──",
+        f"周一收盘查期权收盘价 P，",
+        f"周二开盘挂限价卖单 = P × {k_star['k']:.2f}",
+        "GTC 持续至周五收盘；整周未成交则放弃本周。",
+        "=" * 60,
+    ]
+
+    return "\n".join(lines)
+
+
+def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Lambda 策略入场限价优化")
+    parser.add_argument("--ticker", default="TQQQ", help="标的代码（默认 TQQQ）")
+    parser.add_argument("--output", default=None, help="报告输出路径（默认打印到控制台）")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
+    api_key = os.environ.get("MASSIVE_API_KEY")
+    if not api_key:
+        print("错误：未设置 MASSIVE_API_KEY 环境变量")
+        return 1
+
+    json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "output", f"{args.ticker.upper()}.json")
+    if not os.path.exists(json_path):
+        print(f"错误：{json_path} 不存在，请先运行: python run.py {args.ticker}")
+        return 1
+
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    trades = get_signal_trades(data["weeks"])
+    print(f"信号交易: {len(trades)} 笔")
+
+    enriched = enrich_with_option_data(trades, api_key, ticker=args.ticker.upper())
+    valid_count = sum(1 for t in enriched if t["data_complete"])
+    print(f"数据完整: {valid_count} / {len(enriched)} 笔")
+
+    results = sweep_k(enriched)
+    if not results:
+        print("无有效数据，无法优化")
+        return 1
+
+    k_star = find_optimal_k(results)
+    report = print_report(enriched, results, k_star)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(report)
+        print(f"报告已保存: {args.output}")
+    else:
+        print(report)
+
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
