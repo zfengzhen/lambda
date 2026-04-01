@@ -109,3 +109,67 @@ class TestFetchOptionBars:
         assert "O:TQQQ250131P00038500" in call_url
         assert "/v2/aggs/ticker/" in call_url
         assert "/range/1/day/" in call_url
+
+
+from option_fetcher import get_signal_trades
+
+SAMPLE_WEEKS = [
+    {
+        "date": "2025-01-06", "tier": "A", "close": 42.84,
+        "strike": 38.56, "otm": 10, "expiry_date": "2025-01-31",
+        "pending": False, "safe_expiry": True,
+    },
+    {
+        "date": "2025-01-13", "tier": "C", "close": 40.0,
+        "strike": 30.0, "otm": 25, "expiry_date": "2025-02-07",
+        "pending": False, "safe_expiry": True,
+    },
+    {
+        "date": "2025-01-20", "tier": "B1", "close": 38.0,
+        "strike": 32.3, "otm": 15, "expiry_date": "2025-02-14",
+        "pending": True, "safe_expiry": None,
+    },
+    {
+        "date": "2024-12-30", "tier": "B3", "close": 55.0,
+        "strike": 46.75, "otm": 15, "expiry_date": "2025-01-24",
+        "pending": False, "safe_expiry": True,
+    },
+]
+
+
+class TestGetSignalTrades:
+    def test_filters_out_c_tier(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        tiers = [t["layer"] for t in trades]
+        assert "C" not in tiers
+
+    def test_filters_out_pending(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        assert all(not t.get("pending") for t in trades)
+
+    def test_returns_two_valid_trades(self):
+        # A (non-C, non-pending) + B3 (non-C, non-pending) = 2
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        assert len(trades) == 2
+
+    def test_rounds_strike_to_half_dollar(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        a_trade = next(t for t in trades if t["layer"] == "A")
+        # 38.56 → 38.5
+        assert a_trade["strike"] == 38.5
+
+    def test_otm_pct_correct(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        a_trade = next(t for t in trades if t["layer"] == "A")
+        assert a_trade["otm_pct"] == pytest.approx(0.10)
+
+    def test_sorted_by_date_ascending(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        dates = [t["week_start"] for t in trades]
+        assert dates == sorted(dates)
+
+    def test_output_fields(self):
+        trades = get_signal_trades(SAMPLE_WEEKS)
+        for t in trades:
+            assert set(t.keys()) >= {"week_start", "layer", "mon_close",
+                                     "strike", "expiry", "otm_pct"}

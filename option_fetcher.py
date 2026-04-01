@@ -96,3 +96,34 @@ def fetch_option_bars(symbol: str, from_date: str, to_date: str,
         bars.append({"date": dt, "open": r["o"], "high": r["h"],
                      "low": r["l"], "close": r["c"]})
     return bars
+
+
+def get_signal_trades(weeks: list[dict]) -> list[dict]:
+    """从 backtest_weeks() 输出中提取有效信号交易（非 C 层、非 pending）。
+
+    行权价圆整到最近 $0.50 行权价间距，otm 整数字段转为小数。
+
+    Args:
+        weeks: strategy.backtest_weeks() 的返回值
+
+    Returns:
+        信号交易列表，每条包含:
+            week_start, layer, mon_close, strike, expiry, otm_pct
+        按 week_start 升序排列。
+    """
+    trades = []
+    for w in weeks:
+        if w.get("pending"):
+            continue
+        if w.get("tier") == "C":
+            continue
+        trades.append({
+            "week_start": w["date"],
+            "layer": w["tier"],
+            "mon_close": w["close"],
+            "strike": round_to_strike_increment(w["strike"]),
+            "expiry": w["expiry_date"],
+            "otm_pct": w["otm"] / 100.0,
+        })
+    trades.sort(key=lambda t: t["week_start"])
+    return trades
