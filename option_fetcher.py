@@ -1,10 +1,5 @@
 """期权数据获取：OCC 合约 symbol 构建、日线 OHLC 拉取、信号交易提取"""
 import datetime
-import logging
-import time
-import requests
-
-logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.massive.com"
 STRIKE_INCREMENT = 0.5  # TQQQ 期权行权价间距（美元）
