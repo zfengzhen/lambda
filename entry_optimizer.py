@@ -6,12 +6,13 @@
     python entry_optimizer.py --output report.txt   # 保存报告到文件
 
 数据来源优先级:
-    1. Flat Files（S3，完整历史）— 需设置 MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY
-    2. REST API（近 4 个月）     — 需设置 MASSIVE_API_KEY
+    1. 本地 DuckDB（output/market_data.duckdb，最快，无网络）— 需先运行 data_sync.py
+    2. Flat Files（S3，完整历史）— 需设置 MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY
+    3. REST API（近 4 个月）     — 需设置 MASSIVE_API_KEY
 
 前置条件:
     1. 已运行 python run.py 生成 output/TQQQ.json
-    2. 至少设置上述其中一组环境变量
+    2. 至少满足上述其中一个数据来源条件
 """
 import datetime
 import json
