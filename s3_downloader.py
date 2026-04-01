@@ -50,22 +50,8 @@ def trading_days(from_date: str, to_date: str) -> list[str]:
 
 
 def _already_synced(date_str: str) -> bool:
-    """检查该日期是否已在 sync_log 中有 ok 记录。DB 或表不存在时返回 False。"""
-    import duckdb
-    if not data_store.DB_PATH.exists():
-        return False
-    con = duckdb.connect(str(data_store.DB_PATH))
-    try:
-        result = con.execute(
-            "SELECT COUNT(*) FROM sync_log WHERE date=? AND data_type='option' AND status='ok'",
-            [date_str],
-        ).fetchone()[0]
-    except duckdb.CatalogException:
-        # 表尚未创建，视为未同步
-        return False
-    finally:
-        con.close()
-    return result > 0
+    """检查该日期是否已在 sync_log 中有 ok 记录。"""
+    return data_store.is_synced(date_str, "option")
 
 
 def download_and_store_day(date_str: str, s3_client) -> int:
@@ -101,8 +87,8 @@ def download_and_store_day(date_str: str, s3_client) -> int:
                 "high": float(row["high"]),
                 "low": float(row["low"]),
                 "close": float(row["close"]),
-                "volume": int(row["volume"]) if row.get("volume") else None,
-                "transactions": int(row["transactions"]) if row.get("transactions") else None,
+                "volume": int(float(row["volume"])) if row.get("volume") else None,
+                "transactions": int(float(row["transactions"])) if row.get("transactions") else None,
             })
 
     written = data_store.upsert_option_bars(rows)

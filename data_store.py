@@ -235,3 +235,20 @@ def write_sync_log(date: str, data_type: str, rows_written: int,
         )
     finally:
         con.close()
+
+
+def is_synced(date_str: str, data_type: str) -> bool:
+    """检查指定日期和类型是否已在 sync_log 中有 ok 记录。DB 或表不存在时返回 False。"""
+    if not DB_PATH.exists():
+        return False
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT COUNT(*) FROM sync_log WHERE date=? AND data_type=? AND status='ok'",
+            [date_str, data_type],
+        ).fetchone()[0]
+    except duckdb.CatalogException:
+        return False
+    finally:
+        con.close()
+    return result > 0

@@ -101,9 +101,8 @@ def test_sync_options_processes_date_range(tmp_path, mock_s3):
          "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
          "window_start": "1000", "transactions": "2"},
     ]
-    mock_s3.get_object.return_value = {
-        "Body": io.BytesIO(_make_csv_gz(sample_rows))
-    }
+    gz_data = _make_csv_gz(sample_rows)
+    mock_s3.get_object.side_effect = lambda **kw: {"Body": io.BytesIO(gz_data)}
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
