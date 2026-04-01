@@ -19,9 +19,7 @@ def test_full_sync_calls_both_downloaders(tmp_path):
     with patch.object(data_store, "DB_PATH", db_path), \
          patch("data_sync.s3_downloader.sync_options") as mock_s3, \
          patch("data_sync.rest_downloader.sync_equity") as mock_rest:
-        data_sync.full_sync(
-            years=1, tickers=["TQQQ"], api_key="key"
-        )
+        data_sync.full_sync(tickers=["TQQQ"], api_key="key")
     mock_s3.assert_called_once()
     mock_rest.assert_called_once()
     # equity 调用包含 tickers 列表

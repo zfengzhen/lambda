@@ -172,7 +172,8 @@ def insert_option_bars_from_csv(
         where_sql = ""
 
     sql = f"""
-        INSERT INTO option_bars (date, symbol, open, high, low, close, volume, transactions)
+        INSERT OR IGNORE INTO option_bars
+            (date, symbol, open, high, low, close, volume, transactions)
         SELECT
             CAST('{date_str}' AS DATE),
             ticker,

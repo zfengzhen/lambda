@@ -97,6 +97,7 @@ def test_download_and_store_day_skips_existing(tmp_path, mock_s3):
 
 
 def test_sync_options_processes_date_range(tmp_path, mock_s3):
+    """同月两天都被下载写入，sync_log 写月级记录。"""
     gz_data = _make_csv_gz([
         {"ticker": "O:TQQQ250131P00038500", "volume": "5",
          "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
@@ -115,7 +116,36 @@ def test_sync_options_processes_date_range(tmp_path, mock_s3):
         with patch("s3_downloader.make_s3_client", return_value=mock_s3), \
              patch("s3_downloader._download_day_file", side_effect=fake_download):
             s3_downloader.sync_options("2025-01-06", "2025-01-07")
+
     assert call_count["n"] == 2
+    # 月级 sync_log（键为月份第一天）
+    import duckdb
+    con = duckdb.connect(str(db_path))
+    row = con.execute(
+        "SELECT status FROM sync_log WHERE date='2025-01-01' AND data_type='option_month'"
+    ).fetchone()
+    con.close()
+    assert row is not None and row[0] == "ok"
+
+
+def test_sync_options_skips_synced_month(tmp_path, mock_s3):
+    """月级 sync_log 存在时整月跳过，不触发下载。"""
+    gz_data = _make_csv_gz([
+        {"ticker": "O:TQQQ250131P00038500", "volume": "5",
+         "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "2"},
+    ])
+    db_path = tmp_path / "test.duckdb"
+    with patch.object(data_store, "DB_PATH", db_path):
+        data_store.init_db()
+        # 预先写入 2025-01 月级同步记录
+        data_store.write_sync_log("2025-01-01", "option_month", 100, "ok")
+
+        with patch("s3_downloader.make_s3_client", return_value=mock_s3), \
+             patch("s3_downloader._download_day_file") as mock_dl:
+            s3_downloader.sync_options("2025-01-06", "2025-01-10")
+
+    mock_dl.assert_not_called()
 
 
 def test_download_and_store_day_ticker_filter(tmp_path):
