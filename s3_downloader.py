@@ -97,22 +97,89 @@ def download_and_store_day(date_str: str, s3_client) -> int:
     return written
 
 
-def sync_options(from_date: str, to_date: str, s3_client=None) -> None:
+def _fetch_day_rows(date_str: str, s3_client) -> tuple[str, list[dict]]:
+    """下载并解析单日期权数据，返回 (date_str, rows)。节假日返回空列表。不写 DB。"""
+    d = datetime.date.fromisoformat(date_str)
+    key = f"{_PREFIX}/{d.year}/{d.month:02d}/{date_str}.csv.gz"
+    try:
+        resp = s3_client.get_object(Bucket=_BUCKET, Key=key)
+        raw = resp["Body"].read()
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        if code in ("404", "NoSuchKey"):
+            logger.debug(f"[s3] {date_str} 非交易日，跳过")
+            return date_str, []
+        raise
+
+    rows = []
+    with gzip.open(io.BytesIO(raw), "rt", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                rows.append({
+                    "date": date_str,
+                    "symbol": row["ticker"],
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": int(float(row["volume"])) if row.get("volume") else None,
+                    "transactions": int(float(row["transactions"])) if row.get("transactions") else None,
+                })
+            except (KeyError, TypeError, ValueError) as e:
+                logger.warning(f"[s3] {date_str} 跳过异常行: {e}")
+    return date_str, rows
+
+
+def sync_options(from_date: str, to_date: str, s3_client=None,
+                 workers: int = 1) -> None:
     """同步指定日期范围内的期权数据。
 
     Args:
         from_date: 起始日期 "YYYY-MM-DD"
         to_date:   结束日期 "YYYY-MM-DD"
         s3_client: boto3 S3 客户端（None 则自动创建）
+        workers:   并行下载线程数（默认 1，顺序下载）
     """
     if s3_client is None:
         s3_client = make_s3_client()
 
-    days = trading_days(from_date, to_date)
-    logger.info(f"[s3] 同步期权数据 {from_date} ~ {to_date}，共 {len(days)} 个交易日")
-    for date_str in days:
-        try:
-            download_and_store_day(date_str, s3_client)
-        except Exception as e:
-            data_store.write_sync_log(date_str, "option", 0, "error", str(e))
-            logger.error(f"[s3] {date_str} 下载失败: {e}")
+    days = [d for d in trading_days(from_date, to_date)
+            if not _already_synced(d)]
+    logger.info(
+        f"[s3] 同步期权数据 {from_date} ~ {to_date}，"
+        f"{len(days)} 天待下载，{workers} 线程"
+    )
+    if not days:
+        return
+
+    if workers <= 1:
+        for date_str in days:
+            try:
+                download_and_store_day(date_str, s3_client)
+            except Exception as e:
+                data_store.write_sync_log(date_str, "option", 0, "error", str(e))
+                logger.error(f"[s3] {date_str} 下载失败: {e}")
+        return
+
+    # 并行下载+解析，串行写 DB
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_fetch_day_rows, d, s3_client): d
+            for d in days
+        }
+        for future in as_completed(futures):
+            date_str = futures[future]
+            try:
+                date_str, rows = future.result()
+                if rows:
+                    written = data_store.upsert_option_bars(rows)
+                    data_store.write_sync_log(date_str, "option", written, "ok")
+                    logger.info(f"[s3] {date_str}: {written:,} 行写入 option_bars")
+                else:
+                    logger.debug(f"[s3] {date_str} 节假日，跳过")
+            except Exception as e:
+                data_store.write_sync_log(date_str, "option", 0, "error", str(e))
+                logger.error(f"[s3] {date_str} 下载失败: {e}")

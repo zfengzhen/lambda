@@ -110,3 +110,24 @@ def test_sync_options_processes_date_range(tmp_path, mock_s3):
             s3_downloader.sync_options("2025-01-06", "2025-01-07")
     # 两个交易日各调用一次
     assert mock_s3.get_object.call_count == 2
+
+
+def test_sync_options_parallel(tmp_path, mock_s3):
+    """workers>1 时并行下载，结果写入 DB。"""
+    gz_data = _make_csv_gz([
+        {"ticker": "O:TQQQ250131P00038500", "volume": "5",
+         "open": "0.85", "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "2"},
+    ])
+    mock_s3.get_object.side_effect = lambda **kw: {"Body": io.BytesIO(gz_data)}
+    db_path = tmp_path / "test.duckdb"
+    with patch.object(data_store, "DB_PATH", db_path):
+        data_store.init_db()
+        with patch("s3_downloader.make_s3_client", return_value=mock_s3):
+            s3_downloader.sync_options("2025-01-06", "2025-01-07", workers=4)
+    assert mock_s3.get_object.call_count == 2
+    import duckdb
+    con = duckdb.connect(str(db_path))
+    rows = con.execute("SELECT COUNT(*) FROM option_bars").fetchone()[0]
+    con.close()
+    assert rows == 2
