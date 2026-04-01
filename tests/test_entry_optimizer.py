@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from entry_optimizer import enrich_with_option_data
+from entry_optimizer import enrich_with_option_data, sweep_k, find_optimal_k
 
 SAMPLE_TRADE = {
     "week_start": "2025-01-06",   # Monday
@@ -81,3 +81,73 @@ class TestEnrichWithOptionData:
         assert t["week_start"] == "2025-01-06"
         assert t["layer"] == "A"
         assert t["strike"] == pytest.approx(38.5)
+
+
+# 参考价 0.87，整周最高 0.95
+COMPLETE_TRADE = {
+    "week_start": "2025-01-06", "layer": "A",
+    "mon_close": 42.84, "strike": 38.5,
+    "expiry": "2025-01-31", "otm_pct": 0.10,
+    "option_symbol": "O:TQQQ250131P00038500",
+    "mon_close_option": 0.87, "week_high": 0.95,
+    "data_complete": True,
+}
+
+INCOMPLETE_TRADE = {**COMPLETE_TRADE, "data_complete": False}
+
+
+class TestSweepK:
+    def test_all_fill_at_low_k(self):
+        # limit = 0.87 × 0.5 = 0.435 < 0.95 → 成交
+        results = sweep_k([COMPLETE_TRADE], k_min=0.5, k_max=0.5, k_step=0.1)
+        assert results[0]["fill_count"] == 1
+        assert results[0]["total_premium"] == pytest.approx(0.87 * 0.5, rel=1e-4)
+
+    def test_none_fill_at_high_k(self):
+        # limit = 0.87 × 2.0 = 1.74 > 0.95 → 不成交
+        results = sweep_k([COMPLETE_TRADE], k_min=2.0, k_max=2.0, k_step=0.1)
+        assert results[0]["fill_count"] == 0
+        assert results[0]["total_premium"] == pytest.approx(0.0)
+
+    def test_fill_rate_at_market_price(self):
+        # limit = 0.87 × 1.0 = 0.87 ≤ 0.95 → 成交，fill_rate = 100%
+        results = sweep_k([COMPLETE_TRADE], k_min=1.0, k_max=1.0, k_step=0.1)
+        assert results[0]["fill_rate"] == pytest.approx(1.0)
+
+    def test_skips_incomplete_trades(self):
+        results = sweep_k([INCOMPLETE_TRADE, COMPLETE_TRADE],
+                          k_min=1.0, k_max=1.0, k_step=0.1)
+        # 只有 COMPLETE_TRADE 计入，fill_rate = 1/1
+        assert results[0]["fill_rate"] == pytest.approx(1.0)
+        assert results[0]["fill_count"] == 1
+
+    def test_premium_at_boundary_k(self):
+        # limit = 0.87 × (0.95/0.87) ≈ 0.95 = week_high → 刚好成交
+        k_boundary = round(0.95 / 0.87, 10)
+        results = sweep_k([COMPLETE_TRADE], k_min=k_boundary,
+                          k_max=k_boundary, k_step=0.1)
+        assert results[0]["fill_count"] == 1
+
+    def test_returns_empty_for_all_incomplete(self):
+        results = sweep_k([INCOMPLETE_TRADE])
+        assert results == []
+
+    def test_result_structure(self):
+        results = sweep_k([COMPLETE_TRADE], k_min=1.0, k_max=1.0, k_step=0.1)
+        r = results[0]
+        assert set(r.keys()) >= {"k", "total_premium", "fill_count", "fill_rate"}
+
+
+class TestFindOptimalK:
+    def test_selects_max_total_premium(self):
+        sweep = [
+            {"k": 1.0, "total_premium": 0.87, "fill_count": 1, "fill_rate": 1.0},
+            {"k": 1.1, "total_premium": 0.96, "fill_count": 1, "fill_rate": 1.0},
+            {"k": 1.5, "total_premium": 0.50, "fill_count": 1, "fill_rate": 0.5},
+        ]
+        best = find_optimal_k(sweep)
+        assert best["k"] == pytest.approx(1.1)
+
+    def test_raises_on_empty(self):
+        with pytest.raises(ValueError, match="sweep_results 为空"):
+            find_optimal_k([])

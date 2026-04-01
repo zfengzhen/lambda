@@ -12,6 +12,8 @@
 import datetime
 import logging
 
+import numpy as np
+
 from option_fetcher import build_occ_symbol, fetch_option_bars
 
 logger = logging.getLogger(__name__)
@@ -91,3 +93,60 @@ def enrich_with_option_data(trades: list[dict], api_key: str,
         })
 
     return enriched
+
+
+def sweep_k(trades: list[dict],
+            k_min: float = 0.5,
+            k_max: float = 3.0,
+            k_step: float = 0.05) -> list[dict]:
+    """扫描不同 k 值，计算每个 k 下的总权利金和成交率。
+
+    限价单 = mon_close_option × k；成交条件：week_high >= 限价单。
+    仅使用 data_complete=True 的交易。
+
+    Args:
+        trades:          enrich_with_option_data() 输出
+        k_min, k_max:    扫描范围（含端点）
+        k_step:          步长
+
+    Returns:
+        每个 k 对应 {k, total_premium, fill_count, fill_rate} 的列表
+    """
+    valid = [t for t in trades if t.get("data_complete")]
+    if not valid:
+        return []
+
+    results = []
+    for k in np.arange(k_min, k_max + k_step / 2, k_step):
+        k = round(float(k), 10)
+        total_premium = 0.0
+        fill_count = 0
+        for trade in valid:
+            limit = round(trade["mon_close_option"] * k, 10)
+            if trade["week_high"] >= limit:
+                total_premium += limit
+                fill_count += 1
+        results.append({
+            "k": round(k, 4),
+            "total_premium": round(total_premium, 6),
+            "fill_count": fill_count,
+            "fill_rate": round(fill_count / len(valid), 4),
+        })
+    return results
+
+
+def find_optimal_k(sweep_results: list[dict]) -> dict:
+    """从扫描结果中找出 total_premium 最大的 k 对应的结果行。
+
+    Args:
+        sweep_results: sweep_k() 输出
+
+    Returns:
+        最优 {k, total_premium, fill_count, fill_rate}
+
+    Raises:
+        ValueError: sweep_results 为空时
+    """
+    if not sweep_results:
+        raise ValueError("sweep_results 为空")
+    return max(sweep_results, key=lambda r: r["total_premium"])
