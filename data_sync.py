@@ -32,7 +32,7 @@ def full_sync(years: int, tickers: list[str], api_key: str) -> None:
     logger.info(f"全量同步 {from_date} ~ {to_date}，标的: {tickers}")
 
     data_store.init_db()
-    s3_downloader.sync_options(from_date, to_date)
+    s3_downloader.sync_options(from_date, to_date, tickers=tickers or None)
 
     if tickers and api_key:
         rest_downloader.sync_equity(tickers, from_date, to_date, api_key)
@@ -59,7 +59,7 @@ def incremental_sync(tickers: list[str], api_key: str) -> None:
         return
 
     logger.info(f"增量同步 {from_date} ~ {to_date}")
-    s3_downloader.sync_options(from_date, to_date)
+    s3_downloader.sync_options(from_date, to_date, tickers=tickers or None)
 
     if tickers and not api_key:
         logger.warning("未设置 MASSIVE_API_KEY，跳过股票数据同步")

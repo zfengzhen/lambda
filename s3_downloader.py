@@ -5,9 +5,7 @@ S3 路径: us_options_opra/day_aggs_v1/YYYY/MM/YYYY-MM-DD.csv.gz
              MASSIVE_S3_ENDPOINT（默认 https://files.massive.com）
              MASSIVE_S3_BUCKET（默认 flatfiles）
 """
-import csv
 import datetime
-import gzip
 import logging
 import os
 
@@ -54,7 +52,8 @@ def _already_synced(date_str: str) -> bool:
     return data_store.is_synced(date_str, "option")
 
 
-def download_and_store_day(date_str: str, s3_client) -> int:
+def download_and_store_day(date_str: str, s3_client,
+                            tickers: list[str] | None = None) -> int:
     """下载（或读取缓存）指定日期的期权全量文件并写入 DB。
 
     Returns:
@@ -68,48 +67,74 @@ def download_and_store_day(date_str: str, s3_client) -> int:
     if cache_path is None:
         return 0  # 非交易日
 
-    rows = []
-    with gzip.open(cache_path, "rt", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                rows.append({
-                    "date": date_str,
-                    "symbol": row["ticker"],
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": int(float(row["volume"])) if row.get("volume") else None,
-                    "transactions": int(float(row["transactions"])) if row.get("transactions") else None,
-                })
-            except (KeyError, TypeError, ValueError) as e:
-                logger.warning(f"[s3] {date_str} 跳过异常行: {e}")
-
-    written = data_store.upsert_option_bars(rows)
+    written = data_store.insert_option_bars_from_csv(cache_path, date_str, tickers)
     data_store.write_sync_log(date_str, "option", written, "ok")
     logger.info(f"[s3] {date_str}: {written:,} 行写入 option_bars")
     return written
 
 
-def sync_options(from_date: str, to_date: str, s3_client=None) -> None:
-    """同步指定日期范围内的期权数据（顺序下载，断点续传）。
+_SENTINEL = object()
 
-    已缓存到 output/flat_files_cache/ 的文件不重复下载。
+
+def sync_options(from_date: str, to_date: str,
+                 tickers: list[str] | None = None,
+                 s3_client=None) -> None:
+    """同步指定日期范围内的期权数据。
+
+    下载线程与写入主线程并行：下载下一天时同步写入当前天。
+    已缓存到 output/flat_files_cache/ 的文件直接读取，无需重新下载。
 
     Args:
         from_date: 起始日期 "YYYY-MM-DD"
         to_date:   结束日期 "YYYY-MM-DD"
+        tickers:   标的代码过滤，如 ["TQQQ", "QQQ"]；None 则写入全部合约
         s3_client: boto3 S3 客户端（None 则自动创建）
     """
+    import queue
+    import threading
+
     if s3_client is None:
         s3_client = make_s3_client()
 
     days = trading_days(from_date, to_date)
-    logger.info(f"[s3] 同步期权数据 {from_date} ~ {to_date}，共 {len(days)} 个交易日")
-    for date_str in days:
-        try:
-            download_and_store_day(date_str, s3_client)
-        except Exception as e:
-            data_store.write_sync_log(date_str, "option", 0, "error", str(e))
-            logger.error(f"[s3] {date_str} 下载失败: {e}")
+    logger.info(
+        f"[s3] 同步期权数据 {from_date} ~ {to_date}，共 {len(days)} 个交易日"
+        + (f"，标的: {tickers}" if tickers else "")
+    )
+
+    q = queue.Queue(maxsize=3)
+
+    def producer():
+        for date_str in days:
+            if _already_synced(date_str):
+                q.put((date_str, None))
+                continue
+            try:
+                cache_path = _download_day_file(date_str, s3_client)
+                q.put((date_str, cache_path))
+            except Exception as e:
+                data_store.write_sync_log(date_str, "option", 0, "error", str(e))
+                logger.error(f"[s3] {date_str} 下载失败: {e}")
+                q.put((date_str, None))
+        q.put(_SENTINEL)
+
+    t = threading.Thread(target=producer, daemon=True)
+    t.start()
+
+    while True:
+        item = q.get()
+        if item is _SENTINEL:
+            break
+        date_str, cache_path = item
+        if cache_path is not None:
+            try:
+                written = data_store.insert_option_bars_from_csv(
+                    cache_path, date_str, tickers
+                )
+                data_store.write_sync_log(date_str, "option", written, "ok")
+                logger.info(f"[s3] {date_str}: {written:,} 行写入 option_bars")
+            except Exception as e:
+                data_store.write_sync_log(date_str, "option", 0, "error", str(e))
+                logger.error(f"[s3] {date_str} 写入失败: {e}")
+
+    t.join()

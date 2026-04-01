@@ -111,6 +111,8 @@ def upsert_equity_bars(rows: list[dict]) -> int:
 def upsert_option_bars(rows: list[dict]) -> int:
     """批量写入/更新期权日K。主键冲突时覆盖。
 
+    # Deprecated: retained for test fixtures. For bulk CSV loading use insert_option_bars_from_csv().
+
     Args:
         rows: list of {date, symbol, open, high, low, close, volume, transactions}
 
@@ -141,6 +143,66 @@ def upsert_option_bars(rows: list[dict]) -> int:
     finally:
         con.close()
     return len(rows)
+
+
+def insert_option_bars_from_csv(
+    csv_path: "Path",
+    date_str: str,
+    tickers: list[str] | None = None,
+) -> int:
+    """从 gzip CSV 文件批量写入 option_bars（使用 DuckDB read_csv，速度远快于 executemany）。
+
+    Args:
+        csv_path:  本地 .csv.gz 文件路径
+        date_str:  交易日期 "YYYY-MM-DD"
+        tickers:   标的代码列表，如 ["TQQQ", "QQQ"]；None 或空列表则写入全部合约
+
+    Returns:
+        写入行数
+
+    Raises:
+        Exception: 写入失败时回滚并重新抛出
+    """
+    if tickers:
+        where_sql = "WHERE " + " OR ".join(
+            f"ticker LIKE 'O:{t.upper()}%'" for t in tickers
+            if t.isalpha() and len(t) <= 10
+        )
+    else:
+        where_sql = ""
+
+    sql = f"""
+        INSERT INTO option_bars (date, symbol, open, high, low, close, volume, transactions)
+        SELECT
+            CAST('{date_str}' AS DATE),
+            ticker,
+            CAST(open AS DOUBLE),
+            CAST(high AS DOUBLE),
+            CAST(low  AS DOUBLE),
+            CAST(close AS DOUBLE),
+            TRY_CAST(CAST(volume AS VARCHAR) AS BIGINT),
+            TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT)
+        FROM read_csv('{str(csv_path)}', compression='gzip', header=true,
+            auto_detect=true)
+        {where_sql}
+    """
+
+    con = _connect()
+    try:
+        con.execute("BEGIN")
+        con.execute(sql)
+        written = con.execute(
+            "SELECT COUNT(*) FROM option_bars WHERE date = CAST(? AS DATE)",
+            [date_str],
+        ).fetchone()[0]
+        con.execute("COMMIT")
+        logger.info(f"[data_store] {date_str}: {written:,} 行写入 option_bars")
+        return written
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
 
 
 def query_option_bars(symbol: str, from_date: str, to_date: str) -> list[dict]:
