@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from option_fetcher import round_to_strike_increment, build_occ_symbol
+from option_fetcher import (
+    round_to_strike_increment,
+    build_occ_symbol,
+    fetch_option_bars,
+    get_signal_trades,
+)
 
 
 class TestRoundToStrikeIncrement:
@@ -39,8 +44,6 @@ class TestBuildOccSymbol:
         # 行权价 5.0 → 5000 → 00005000
         assert build_occ_symbol("TQQQ", "2025-01-31", 5.0) == "O:TQQQ250131P00005000"
 
-
-from option_fetcher import fetch_option_bars
 
 # 模拟 API 响应（时间戳对应 2025-01-06 ~ 2025-01-07 UTC 零点）
 OPTION_BAR_MON = {"t": 1736121600000, "o": 0.85, "h": 0.92, "l": 0.80, "c": 0.87}
@@ -111,8 +114,6 @@ class TestFetchOptionBars:
         assert "/range/1/day/" in call_url
 
 
-from option_fetcher import get_signal_trades
-
 SAMPLE_WEEKS = [
     {
         "date": "2025-01-06", "tier": "A", "close": 42.84,
@@ -145,7 +146,9 @@ class TestGetSignalTrades:
 
     def test_filters_out_pending(self):
         trades = get_signal_trades(SAMPLE_WEEKS)
-        assert all(not t.get("pending") for t in trades)
+        week_starts = {t["week_start"] for t in trades}
+        # The B1 week (2025-01-20) has pending=True and must be excluded
+        assert "2025-01-20" not in week_starts
 
     def test_returns_two_valid_trades(self):
         # A (non-C, non-pending) + B3 (non-C, non-pending) = 2
