@@ -5,9 +5,13 @@
     python entry_optimizer.py --ticker TQQQ
     python entry_optimizer.py --output report.txt   # 保存报告到文件
 
+数据来源优先级:
+    1. Flat Files（S3，完整历史）— 需设置 MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY
+    2. REST API（近 4 个月）     — 需设置 MASSIVE_API_KEY
+
 前置条件:
     1. 已运行 python run.py 生成 output/TQQQ.json
-    2. 设置 MASSIVE_API_KEY 环境变量
+    2. 至少设置上述其中一组环境变量
 """
 import datetime
 import json
@@ -21,25 +25,17 @@ from option_fetcher import build_occ_symbol, fetch_option_bars, get_signal_trade
 logger = logging.getLogger(__name__)
 
 
-def enrich_with_option_data(trades: list[dict], api_key: str,
-                             ticker: str = "TQQQ") -> list[dict]:
-    """为每笔信号交易拉取信号周（周一至周五）期权日线数据。
-
-    通过 Massive API 获取期权 OHLC，提取:
-    - mon_close_option: 周一收盘价（限价单参考价）
-    - tue_high/wed_high/thu_high/fri_high: 周二至周五各日最高价
-    - week_high: max(周二至周五最高价)
-    - option_symbol: 合约 OCC symbol
-    - data_complete: True 当且仅当 mon_close_option 非空
-                     且至少 3 天有高价数据
+def _enrich(trades: list[dict], ticker: str, fetch_fn) -> list[dict]:
+    """核心富化逻辑：用 fetch_fn 拉取每笔交易的信号周期权日线数据。
 
     Args:
-        trades: get_signal_trades() 输出
-        api_key: Massive API Key
-        ticker: 标的代码（默认 TQQQ）
+        trades:   get_signal_trades() 输出
+        ticker:   标的代码
+        fetch_fn: callable(symbol, from_date, to_date) → list[{date,open,high,low,close}]
 
     Returns:
-        trades 的副本，每条追加上述字段。
+        trades 的副本，每条追加 option_symbol / mon_close_option /
+        tue_high ~ fri_high / week_high / data_complete 字段。
     """
     enriched = []
     for trade in trades:
@@ -51,7 +47,7 @@ def enrich_with_option_data(trades: list[dict], api_key: str,
         # 节假日周下字段标签（tue_high 等）与日历日期不对应，但算法语义正确。
         mon = datetime.date.fromisoformat(trade["week_start"])
         fri = mon + datetime.timedelta(days=4)
-        bars = fetch_option_bars(symbol, str(mon), str(fri), api_key)
+        bars = fetch_fn(symbol, str(mon), str(fri))
         bar_by_date = {b["date"]: b for b in bars}
 
         def _close(offset: int):
@@ -98,6 +94,44 @@ def enrich_with_option_data(trades: list[dict], api_key: str,
         })
 
     return enriched
+
+
+def enrich_with_option_data(trades: list[dict], api_key: str,
+                             ticker: str = "TQQQ") -> list[dict]:
+    """通过 REST API 富化信号交易（数据保留约 4 个月）。
+
+    Args:
+        trades:  get_signal_trades() 输出
+        api_key: Massive REST API Key
+        ticker:  标的代码（默认 TQQQ）
+
+    Returns:
+        trades 的副本，追加期权日线字段。
+    """
+    def fetch_fn(symbol, from_date, to_date):
+        return fetch_option_bars(symbol, from_date, to_date, api_key)
+
+    return _enrich(trades, ticker, fetch_fn)
+
+
+def enrich_with_flat_files(trades: list[dict], s3_client,
+                            ticker: str = "TQQQ") -> list[dict]:
+    """通过 Flat Files（S3）富化信号交易（完整历史，从 2014 年起）。
+
+    Args:
+        trades:    get_signal_trades() 输出
+        s3_client: flat_file_fetcher.make_s3_client() 返回的客户端
+        ticker:    标的代码（默认 TQQQ）
+
+    Returns:
+        trades 的副本，追加期权日线字段。
+    """
+    from flat_file_fetcher import fetch_option_bars_flat
+
+    def fetch_fn(symbol, from_date, to_date):
+        return fetch_option_bars_flat(symbol, from_date, to_date, s3_client)
+
+    return _enrich(trades, ticker, fetch_fn)
 
 
 def sweep_k(trades: list[dict],
@@ -242,11 +276,6 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(message)s")
 
-    api_key = os.environ.get("MASSIVE_API_KEY")
-    if not api_key:
-        print("错误：未设置 MASSIVE_API_KEY 环境变量")
-        return 1
-
     json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "output", f"{args.ticker.upper()}.json")
     if not os.path.exists(json_path):
@@ -259,7 +288,20 @@ def main() -> int:
     trades = get_signal_trades(data["weeks"])
     print(f"信号交易: {len(trades)} 笔")
 
-    enriched = enrich_with_option_data(trades, api_key, ticker=args.ticker.upper())
+    # 优先使用 Flat Files（完整历史）；无 S3 凭据时降级到 REST API（近 4 个月）
+    s3_access_key = os.environ.get("MASSIVE_S3_ACCESS_KEY")
+    if s3_access_key:
+        from flat_file_fetcher import make_s3_client
+        s3_client = make_s3_client()
+        print("数据来源: Flat Files（S3）")
+        enriched = enrich_with_flat_files(trades, s3_client, ticker=args.ticker.upper())
+    else:
+        api_key = os.environ.get("MASSIVE_API_KEY")
+        if not api_key:
+            print("错误：未设置 MASSIVE_S3_ACCESS_KEY 或 MASSIVE_API_KEY 环境变量")
+            return 1
+        print("数据来源: REST API（近 4 个月）")
+        enriched = enrich_with_option_data(trades, api_key, ticker=args.ticker.upper())
     valid_count = sum(1 for t in enriched if t["data_complete"])
     print(f"数据完整: {valid_count} / {len(enriched)} 笔")
 
