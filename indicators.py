@@ -1,15 +1,15 @@
 """技术指标计算：MA、MACD、动态 Pivot"""
 import pandas as pd
 
-MA_PERIODS = [5, 10, 20, 30, 60, 120]
+MA_PERIODS = [5, 10, 20, 60]
 MACD_FAST = 12
 MACD_SLOW = 26
 MACD_SIGNAL = 9
-PIVOT_PERIODS = [1, 5, 10, 20, 30, 50, 120]
+PIVOT_PERIODS = [5, 30]
 
 
 def add_ma(df: pd.DataFrame) -> pd.DataFrame:
-    """添加 MA 均线列：ma5, ma10, ma20, ma30, ma60, ma120"""
+    """添加 MA 均线列：ma5, ma10, ma20, ma60"""
     for period in MA_PERIODS:
         df[f"ma{period}"] = df["close"].rolling(window=period).mean()
     return df

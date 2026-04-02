@@ -15,12 +15,16 @@ from strategy import (
     group_by_week,
     classify_tier,
     compute_hist_vol,
-    find_expiry_friday,
+    find_expiry_date,
     backtest_weeks,
     compute_summary,
     compute_tiers,
     compute_latest,
     get_otm_for_ticker,
+    DEFAULT_OTM_A,
+    DEFAULT_OTM_B,
+    DEFAULT_OTM_C,
+    LEVERAGE_MAP,
 )
 
 
@@ -142,24 +146,31 @@ class TestComputeHistVol:
 
 
 # ---------------------------------------------------------------------------
-# find_expiry_friday
+# find_expiry_date
 # ---------------------------------------------------------------------------
-class TestFindExpiryFriday:
-    """从 entry_date 找 N 周后的周五"""
+class TestFindExpiryDate:
+    """从 entry_date 找 N 周后该周最后一个美股交易日"""
 
-    def test_monday_entry(self):
-        """周一入场，3 整周后周五"""
+    def test_normal_week(self):
+        """普通周（无假日），返回周五"""
         entry = datetime.date(2026, 1, 5)   # 周一
-        friday = find_expiry_friday(entry, weeks=3)
-        assert friday == datetime.date(2026, 1, 30)  # 01-05 + 25天
-        assert friday.weekday() == 4  # 周五
+        expiry = find_expiry_date(entry, weeks=3)
+        assert expiry == datetime.date(2026, 1, 30)  # 周五，非假日
 
-    def test_wednesday_entry(self):
+    def test_good_friday_week(self):
+        """Good Friday 所在周，周五休市，返回周四"""
+        # 2026-04-03 是 Good Friday，NYSE 休市
+        # 2026-03-09（周一）+ 3 weeks → 目标周 03-30~04-03
+        # 04-03 休市，该周最后交易日 = 04-02（周四）
+        entry = datetime.date(2026, 3, 9)
+        expiry = find_expiry_date(entry, weeks=3)
+        assert expiry == datetime.date(2026, 4, 2)
+
+    def test_wednesday_entry_same_as_monday(self):
         """周三入场，仍以该周一起算"""
         entry = datetime.date(2026, 1, 7)   # 周三
-        friday = find_expiry_friday(entry, weeks=3)
-        assert friday == datetime.date(2026, 1, 30)  # 同周一入场结果一致
-        assert friday.weekday() == 4
+        expiry = find_expiry_date(entry, weeks=3)
+        assert expiry == datetime.date(2026, 1, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -210,17 +221,6 @@ class TestBacktestWeeks:
         for r in result:
             assert "tier" in r
             assert r["tier"] in ("A", "B1", "B2", "B3", "B4", "C")
-
-    def test_backtest_portions_rotate(self, scenario):
-        """份额按 1-4 整数循环"""
-        weekly_rows, daily_df = scenario
-        result = backtest_weeks(weekly_rows, daily_df)
-        # 正序检查份额轮转
-        forward = list(reversed(result))
-        for i, r in enumerate(forward):
-            expected = (i % 4) + 1
-            assert r["portion"] == expected
-            assert isinstance(r["portion"], int)
 
     def test_backtest_new_fields(self, scenario):
         """回测结果包含 settle_diff / safe_expiry / pct_change / period_low / low_vs_strike"""
@@ -279,7 +279,7 @@ class TestComputeSummary:
         """返回字典包含所有预期键"""
         result = compute_summary(self._make_weeks())
         expected_keys = {
-            "total_weeks", "sell_count", "settled", "pending",
+            "total_weeks", "settled", "pending",
             "safe_count", "safe_rate",
         }
         assert expected_keys == set(result.keys())
@@ -287,10 +287,6 @@ class TestComputeSummary:
     def test_total_weeks(self):
         result = compute_summary(self._make_weeks())
         assert result["total_weeks"] == 5
-
-    def test_sell_count(self):
-        result = compute_summary(self._make_weeks())
-        assert result["sell_count"] == 5
 
     def test_settled_and_pending(self):
         result = compute_summary(self._make_weeks())
@@ -318,7 +314,7 @@ class TestComputeSummary:
 # compute_tiers
 # ---------------------------------------------------------------------------
 class TestComputeTiers:
-    """按层级统计：只统计出现过的层级，C skip 不出现"""
+    """按层级统计：只统计出现过的层级"""
 
     @staticmethod
     def _make_weeks():
@@ -449,13 +445,14 @@ class TestComputeLatest:
         assert result["strike_a"] == pytest.approx(90.0, abs=0.01)
         assert result["strike_b"] == pytest.approx(85.0, abs=0.01)
 
-    def test_expiry_date_is_friday_string(self):
-        """到期日为字符串格式的周五"""
+    def test_expiry_date_is_trading_day(self):
+        """到期日为字符串格式的美股交易日"""
         weekly_rows, daily_df = self._make_inputs()
         result = compute_latest(weekly_rows, daily_df)
         assert isinstance(result["expiry_date"], str)
         expiry = datetime.date.fromisoformat(result["expiry_date"])
-        assert expiry.weekday() == 4
+        # 到期日应为工作日（周一~周五）
+        assert expiry.weekday() < 5
 
     def test_date_is_string(self):
         """date 为字符串"""
@@ -487,40 +484,39 @@ class TestComputeLatest:
 # ---------------------------------------------------------------------------
 # get_otm_for_ticker
 # ---------------------------------------------------------------------------
+def _expected_otm(leverage: int) -> tuple[float, float, float]:
+    """根据杠杆倍数计算期望 OTM，与 get_otm_for_ticker 公式一致"""
+    return (
+        math.floor(DEFAULT_OTM_A * 100 * leverage / 3) / 100,
+        math.floor(DEFAULT_OTM_B * 100 * leverage / 3) / 100,
+        math.floor(DEFAULT_OTM_C * 100 * leverage / 3) / 100,
+    )
+
+
 class TestGetOtmForTicker:
     """OTM 按杠杆倍数自动推导"""
 
     def test_3x_tqqq(self):
-        """TQQQ 3倍杠杆 → A=10%, B=15%, C=25%（基准值不变）"""
-        a, b, c = get_otm_for_ticker("TQQQ")
-        assert a == 0.10
-        assert b == 0.15
-        assert c == 0.25
+        """TQQQ 3倍杠杆 → 基准值不变"""
+        assert get_otm_for_ticker("TQQQ") == _expected_otm(3)
 
     def test_3x_soxl(self):
         """SOXL 3倍杠杆 → 同 TQQQ"""
-        a, b, c = get_otm_for_ticker("SOXL")
-        assert a == 0.10
-        assert b == 0.15
-        assert c == 0.25
+        assert get_otm_for_ticker("SOXL") == _expected_otm(3)
 
     def test_2x_qld(self):
-        """QLD 2倍杠杆 → A=6%, B=10%, C=16%"""
-        a, b, c = get_otm_for_ticker("QLD")
-        assert a == 0.06
-        assert b == 0.10
-        assert c == 0.16
+        """QLD 2倍杠杆"""
+        assert get_otm_for_ticker("QLD") == _expected_otm(2)
 
     def test_1x_qqq(self):
-        """QQQ 普通股票 → A=3%, B=5%, C=8%"""
-        a, b, c = get_otm_for_ticker("QQQ")
-        assert a == 0.03
-        assert b == 0.05
-        assert c == 0.08
+        """QQQ 普通股票"""
+        assert get_otm_for_ticker("QQQ") == _expected_otm(1)
 
     def test_unknown_ticker(self):
         """未知标的默认 1 倍"""
-        a, b, c = get_otm_for_ticker("AAPL")
-        assert a == 0.03
-        assert b == 0.05
-        assert c == 0.08
+        assert get_otm_for_ticker("AAPL") == _expected_otm(1)
+
+    def test_leverage_map_consistent(self):
+        """所有 LEVERAGE_MAP 中的标的都能正确推导"""
+        for ticker, lev in LEVERAGE_MAP.items():
+            assert get_otm_for_ticker(ticker) == _expected_otm(lev), f"{ticker} 不匹配"

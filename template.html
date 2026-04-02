@@ -26,11 +26,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .overview-row .tier-card .tv{font-size:14px;font-weight:bold;display:block;margin:1px 0 0;line-height:1.1}
 .overview-row .tier-card .td{font-size:9px;color:#6b7b8d;line-height:1.1;margin-top:0}
 
-/* 决策面板 */
-.decision-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-.flow{background:#141b2d;border:1px solid #253044;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;line-height:2;color:#8b95a5}
-.flow .k{color:#c792ea}.flow .c{color:#82aaff}.flow .a{color:#c3e88d}.flow .s{color:#f07178}
-.flow .b1c{color:#ab47bc}.flow .b2c{color:#ff7043}.flow .b3c{color:#66bb6a}.flow .b4c{color:#ffa726}
+/* 决策面板：左决策 右图表 */
+.decision-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:24px}
 
 /* 规则检查表 */
 .rule-table{width:100%;font-size:12px;margin-bottom:14px}
@@ -45,6 +42,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .ops-box .ops-label{color:#546e7a;font-size:11px;margin-bottom:8px}
 .ops-table{width:100%;font-size:12px}
 .ops-table td{padding:4px 0;border-bottom:1px solid #1a2332}
+
+/* 图表容器 */
+.chart-panel{display:flex;flex-direction:column;gap:4px}
+.chart-wrap{position:relative;border-radius:8px;overflow:hidden;border:1px solid #253044;background:#141b2d}
+.chart-legend{position:absolute;top:4px;left:8px;font-size:11px;color:#8b95a5;z-index:10;pointer-events:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chart-legend-title{color:#546e7a;font-weight:600;margin-right:2px}
+.chart-legend .lg-item{display:inline-flex;gap:3px;align-items:center}
+.chart-legend .lg-label{color:#546e7a}
+.chart-legend .lg-val{font-weight:600;font-family:monospace}
 
 /* 表格 */
 .sec-title{color:#e8ecf1;font-size:18px;margin:28px 0 14px;padding-bottom:6px;border-bottom:1px solid #253044}
@@ -67,9 +73,6 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
 .tag-pending{background:#1a237e;color:#7986cb;border:1px dashed #5c6bc0}
 .pct-pos{color:#4caf50}.pct-neg{color:#ef5350}
 .pending-text{color:#7986cb;font-style:italic;font-size:11px}
-.portion{display:inline-block;width:22px;height:22px;line-height:22px;border-radius:50%;text-align:center;font-weight:bold;font-size:10px}
-.p1{background:#1565c0;color:#fff}.p2{background:#6a1b9a;color:#fff}
-.p3{background:#e65100;color:#fff}.p4{background:#2e7d32;color:#fff}
 .bar{display:inline-block;height:5px;border-radius:3px;vertical-align:middle}
 .bar-g{background:linear-gradient(90deg,#2e7d32,#4caf50)}.bar-r{background:linear-gradient(90deg,#c62828,#ef5350)}
 .cum-bar{display:inline-block;height:14px;background:linear-gradient(90deg,#1565c0,#4fc3f7);border-radius:3px;vertical-align:middle;min-width:2px}
@@ -120,31 +123,24 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
   <!-- 统计+层级一行 -->
   <div class="overview-row" id="overviewRow"></div>
 
-  <!-- 决策面板 -->
+  <!-- 决策面板：左=最新决策，右=日K+MACD图表 -->
   <div class="box">
     <div class="decision-grid">
-      <div>
-        <h3>决策树</h3>
-        <div style="color:#8b95a5;font-size:13px;margin-bottom:10px" id="strategyDesc">A 企稳双撑 (10% OTM) + B 弱势守底 (15% OTM) + C 兜底深虚观望 (25% OTM)</div>
-        <div class="flow">
-          <span class="k">IF</span> <span class="c">MACD收窄</span> <span class="k">AND</span> <span class="c">Close &gt; P5_PP</span> <span class="k">AND</span> <span class="c">Close &gt; P30_PP</span>:<br>
-          &nbsp;&nbsp;<span class="a">&rarr; A 企稳双撑: 卖 10% OTM Put (行权价 = Close &times; 0.90)</span><br><br>
-          <span class="k">ELIF</span> <span class="b1c">Close &lt; MA20 AND Close &gt; MA60</span>:<br>
-          &nbsp;&nbsp;<span class="b1c">&rarr; B1 回调均线: 卖 15% OTM Put (行权价 = Close &times; 0.85)</span><br>
-          <span class="k">ELIF</span> <span class="b2c">波动率 &lt; 50% AND |MA20距| &le; 5%</span>:<br>
-          &nbsp;&nbsp;<span class="b2c">&rarr; B2 低波整理: 卖 15% OTM Put</span><br>
-          <span class="k">ELIF</span> <span class="b3c">DIF &lt; 0 AND Close &gt; P30_PP</span>:<br>
-          &nbsp;&nbsp;<span class="b3c">&rarr; B3 超跌支撑: 卖 15% OTM Put</span><br>
-          <span class="k">ELIF</span> <span class="b4c">MA20 &gt; MA60 AND DIF &lt; 0</span>:<br>
-          &nbsp;&nbsp;<span class="b4c">&rarr; B4 趋势动能弱: 卖 15% OTM Put</span><br><br>
-          <span class="k">ELSE</span>: <span class="s">&rarr; C 兜底深虚观望: 卖 25% OTM Put</span>
+      <div id="latestDecision"></div>
+      <div class="chart-panel">
+        <div class="chart-wrap">
+          <div class="chart-legend" id="klineLegend">
+            <span class="chart-legend-title">日K (30天)</span>
+          </div>
+          <div id="klineChart"></div>
         </div>
-        <div style="text-align:center;margin-top:20px;padding:16px 0;border-top:1px solid #253044;line-height:1.6">
-          <div style="font-size:36px;font-weight:900;letter-spacing:12px;background:linear-gradient(135deg,#4fc3f7,#81c784);-webkit-background-clip:text;-webkit-text-fill-color:transparent">控制仓位，纪律至上</div>
-          <div style="font-size:36px;font-weight:900;letter-spacing:12px;background:linear-gradient(135deg,#81c784,#ffc107);-webkit-background-clip:text;-webkit-text-fill-color:transparent">保全本金，久战沙场</div>
+        <div class="chart-wrap">
+          <div class="chart-legend" id="macdLegend">
+            <span class="chart-legend-title">MACD</span>
+          </div>
+          <div id="macdChart"></div>
         </div>
       </div>
-      <div id="latestDecision"></div>
     </div>
   </div>
 
@@ -158,15 +154,16 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
     <table class="weekly">
       <thead><tr>
         <th data-tip="每周首个交易日（通常为周一）">日期</th>
-        <th data-tip="资金份额轮转 P1→P2→P3→P4，4份循环">P</th>
         <th data-tip="策略分层：A 企稳双撑(10%OTM) / B1-B4 弱势守底(15%OTM) / C 兜底深虚观望(25%OTM)">层级</th>
         <th data-tip="Out of The Money，虚值程度。A层10%，B层15%">OTM</th>
         <th data-tip="入场日收盘价">收盘</th>
         <th data-tip="卖出 Put 的行权价 = 收盘价 × (1 - OTM%)，点击排序" data-sort="strike" class="sortable">行权价</th>
-        <th data-tip="期权到期日，入场周起第3周的周五">到期日</th>
+        <th data-tip="行权价向下取整对应的Put期权合约（含DTE天数）">期权合约</th>
+        <th data-tip="期权入场日收盘价 / VWAP近似价">期权价格</th>
         <th data-tip="到期日收盘价（非交易日取前一个交易日），点击排序" data-sort="expiry_close" class="sortable">到期价</th>
         <th data-tip="(到期价 - 行权价) / 行权价 × 100%，正=未被行权，负=被行权，点击排序" data-sort="settle_diff" class="sortable">结算差比</th>
         <th data-tip="结算差比 > 0 即平稳到期（未被行权）">平稳到期</th>
+        <th data-tip="未平稳到期时，到期后股价恢复到行权价以上所需自然日数">恢复天数</th>
         <th data-tip="(到期价 - 入场收盘价) / 入场收盘价 × 100%">期间涨跌</th>
         <th data-tip="入场日到到期日之间的最低收盘价">期间最低</th>
         <th data-tip="(期间最低 - 行权价) / 行权价 × 100%，正=安全，负=曾穿破行权价">距行权</th>
@@ -199,18 +196,15 @@ let currentWeeks = [];
 function fmt(v, d=2) { return v != null ? v.toFixed(d) : '-'; }
 function sign(v, d=2) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(d) : '-'; }
 function pctClass(v) { return v >= 0 ? 'pct-pos' : 'pct-neg'; }
-function portionClass(p) { return 'p' + p; }
 
 /* ===== 渲染：统计+层级一行 ===== */
 function renderOverview(summary, tiers) {
   const s = summary;
   const safeRateCls = s.safe_rate >= 90 ? 'grn' : s.safe_rate >= 70 ? 'gld' : 'red';
 
-  // 统计卡片
   let html = `<div class="stat"><span class="v ${safeRateCls}">${s.safe_rate}%</span><span class="d">平稳到期 ${s.safe_count}/${s.settled}</span></div>`;
-  html += `<div class="stat"><span class="v blu">${s.sell_count}/${s.total_weeks}</span><span class="d">卖出/总周</span></div>`;
+  html += `<div class="stat"><span class="v blu">${s.total_weeks}</span><span class="d">总周数</span></div>`;
 
-  // 层级卡片
   const order = ['A','B1','B2','B3','B4','C'];
   html += order.map(k => {
     const t = tiers[k];
@@ -233,7 +227,6 @@ function renderDecision(latest, otm) {
   const r = latest.rules;
   const close = latest.close;
 
-  // 构建规则检查行
   function row(label, labelColor, desc, pass) {
     const badge = pass
       ? '<span class="badge-y">Y</span>'
@@ -243,36 +236,30 @@ function renderDecision(latest, otm) {
       <td class="rule-val"><span style="color:${valColor}">${desc}</span>${badge}</td></tr>`;
   }
 
-  // A 企稳双撑 三条规则
   const macdDesc = `|MACD今| ${Math.abs(r.macd_today).toFixed(3)} ${r.macd_narrow ? '<' : '>'} |MACD昨| ${Math.abs(r.macd_yesterday).toFixed(3)}`;
   const p5Desc = `Close ${fmt(close)} ${r.above_p5 ? '>' : '<'} P5_PP ${fmt(r.p5_pp)}`;
   const p30Desc = `Close ${fmt(close)} ${r.above_p30 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
 
-  // B1: Close < MA20 AND Close > MA60
   const b1_c1 = close < r.ma20;
   const b1_c2 = close > r.ma60;
   const b1_pass = b1_c1 && b1_c2;
   const b1Desc = `Close ${fmt(close)} ${b1_c1 ? '<' : '>'} MA20 ${fmt(r.ma20)} & ${b1_c2 ? '>' : '<'} MA60 ${fmt(r.ma60)}`;
 
-  // B2: Vol < 50% AND |MA20距| <= 5%
   const b2_c1 = r.hist_vol < 50;
   const b2_c2 = Math.abs(r.ma20_dist) <= 5;
   const b2_pass = b2_c1 && b2_c2;
   const b2Desc = `Vol ${fmt(r.hist_vol,1)}% ${b2_c1 ? '<' : '>'} 50% & |MA20距| ${fmt(Math.abs(r.ma20_dist),2)}% ${b2_c2 ? '<=' : '>'} 5%`;
 
-  // B3: DIF < 0 AND Close > P30_PP
   const b3_c1 = r.dif < 0;
   const b3_c2 = close > r.p30_pp;
   const b3_pass = b3_c1 && b3_c2;
   const b3Desc = `DIF ${fmt(r.dif)} ${b3_c1 ? '<' : '>'} 0 & Close ${fmt(close)} ${b3_c2 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
 
-  // B4: MA20 > MA60 AND DIF < 0
   const b4_c1 = r.ma20 > r.ma60;
   const b4_c2 = r.dif < 0;
   const b4_pass = b4_c1 && b4_c2;
   const b4Desc = `MA20 ${fmt(r.ma20)} ${b4_c1 ? '>' : '<'} MA60 ${fmt(r.ma60)} & DIF ${fmt(r.dif)} ${b4_c2 ? '<' : '>'} 0`;
 
-  // 判断最终结论
   const aPass = r.macd_narrow && r.above_p5 && r.above_p30;
   const tierLabel = `${latest.tier} ${TIER_NAMES[latest.tier] || ''}`;
 
@@ -300,32 +287,281 @@ function renderDecision(latest, otm) {
       </table>
       <div class="${conclusionCls}">
         <span style="color:${conclusionColor};font-size:16px;font-weight:bold">${tierLabel}</span>
-        <div style="color:#6b7b8d;font-size:11px;margin-top:4px">${conclusionNote}</div>
+        <span style="color:${conclusionColor};font-weight:bold;margin-left:12px">${latest.tier === 'A' ? '10' : latest.tier === 'C' ? '25' : '15'}% OTM</span>
       </div>
-      <div class="ops-box">
-        <table class="ops-table">
-          <tr><td style="text-align:left;color:#8b95a5">卖出日</td>
-              <td style="text-align:right">${latest.date}</td></tr>
-          <tr><td style="text-align:left;color:#8b95a5">到期日</td>
-              <td style="text-align:right">${latest.expiry_date}</td></tr>
-          <tr><td style="text-align:left;color:#8b95a5">OTM</td>
-              <td style="text-align:right;color:${conclusionColor};font-weight:bold">${latest.tier === 'A' ? '10' : latest.tier === 'C' ? '25' : '15'}%</td></tr>
-          <tr><td style="text-align:left;color:#8b95a5">行权价</td>
-              <td style="text-align:right;color:${conclusionColor};font-size:18px;font-weight:bold">${latest.tier === 'A' ? fmt(latest.strike_a) : latest.tier === 'C' ? fmt(close * 0.75) : fmt(latest.strike_b)}</td></tr>
-        </table>
-      </div>
+      ${latest.option_symbol ? `<div style="text-align:center;margin-top:12px">
+        <div style="color:#4fc3f7;font-size:15px;font-weight:bold">${latest.option_symbol}</div>
+      </div>` : ''}
     </div>`;
   document.getElementById('latestDecision').innerHTML = html;
+}
+
+/* ===== 渲染：日K + MACD 图表（lightweight-charts） ===== */
+function renderCharts(dailyBars) {
+  if (!dailyBars || dailyBars.length === 0 || typeof LightweightCharts === 'undefined') return;
+
+  const klineEl = document.getElementById('klineChart');
+  const macdEl = document.getElementById('macdChart');
+  klineEl.style.height = '260px';
+  macdEl.style.height = '130px';
+
+  const klineHeight = 260;
+  const macdHeight = 130;
+
+  // 中文月份映射
+  const zhMonths = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  // 通用图表配置
+  const chartOptions = {
+    autoSize: true,
+    layout: { background: { color: '#141b2d' }, textColor: '#8b95a5', fontSize: 11, attributionLogo: false },
+    grid: { vertLines: { color: '#1e2a3a' }, horzLines: { color: '#1e2a3a' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    timeScale: {
+      borderColor: '#253044', timeVisible: false, rightOffset: 1,
+      fixLeftEdge: true, fixRightEdge: true,
+      tickMarkFormatter: (time) => {
+        if (typeof time === 'string') {
+          const p = time.split('-');
+          return `${parseInt(p[1])}/${parseInt(p[2])}`;
+        }
+        return time;
+      },
+    },
+    rightPriceScale: { borderColor: '#253044' },
+    localization: {
+      locale: 'zh-CN',
+      timeFormatter: (t) => {
+        if (typeof t === 'string') {
+          const p = t.split('-');
+          return `${p[0]}年${parseInt(p[1])}月${parseInt(p[2])}日`;
+        }
+        if (typeof t === 'object' && t.year) {
+          return `${t.year}年${t.month}月${t.day}日`;
+        }
+        const d = new Date(t * 1000);
+        return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+      },
+    },
+  };
+
+  // ---- K线图 ----
+  const kChart = LightweightCharts.createChart(klineEl, chartOptions);
+  const candleSeries = kChart.addCandlestickSeries({
+    upColor: '#4caf50', downColor: '#ef5350',
+    borderUpColor: '#4caf50', borderDownColor: '#ef5350',
+    wickUpColor: '#4caf50', wickDownColor: '#ef5350',
+  });
+
+  const candleData = dailyBars.map(b => ({
+    time: b.date, open: b.open, high: b.high, low: b.low, close: b.close,
+  }));
+  candleSeries.setData(candleData);
+
+  // ---- 移动均线 MA5 / MA10 / MA20 ----
+  const maConfigs = [
+    { key: 'ma5',  color: '#f5c878', width: 1 },
+    { key: 'ma10', color: '#42a5f5', width: 1 },
+    { key: 'ma20', color: '#ab47bc', width: 1 },
+    { key: 'ma60', color: '#26a69a', width: 1 },
+  ];
+  maConfigs.forEach(cfg => {
+    const s = kChart.addLineSeries({
+      color: cfg.color, lineWidth: cfg.width,
+      priceLineVisible: false, lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    s.setData(dailyBars.filter(b => b[cfg.key] != null).map(b => ({
+      time: b.date, value: b[cfg.key],
+    })));
+  });
+
+  // ---- 均线金叉 + 放量确认标记 ----
+  // 短期均线（5/10）上穿长期均线（20/60），且当日成交量 > 1.2 × 20日均量
+  const crossMarkers = [];
+  const shortKeys = ['ma5', 'ma10'];
+  const longKeys = ['ma20', 'ma60'];
+  for (let i = 1; i < dailyBars.length; i++) {
+    const cur = dailyBars[i], prev = dailyBars[i - 1];
+    if (cur.vol_ma20 == null || cur.volume == null) continue;
+    const volConfirm = cur.volume > cur.vol_ma20 * 1.2;
+    if (!volConfirm) continue;
+    for (const sk of shortKeys) {
+      for (const lk of longKeys) {
+        if (cur[sk] == null || cur[lk] == null || prev[sk] == null || prev[lk] == null) continue;
+        // 上穿：前一天短线 <= 长线，今天短线 > 长线
+        if (prev[sk] <= prev[lk] && cur[sk] > cur[lk]) {
+          crossMarkers.push({
+            time: cur.date,
+            position: 'belowBar',
+            color: '#4caf50',
+            shape: 'text',
+            text: '✓',
+            size: 1,
+          });
+          break; // 同一天只标一个
+        }
+      }
+      if (crossMarkers.length && crossMarkers[crossMarkers.length - 1].time === cur.date) break;
+    }
+  }
+  crossMarkers.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+  candleSeries.setMarkers(crossMarkers);
+
+  // 成交量（叠加在K线图底部）
+  const volumeSeries = kChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'volume',
+  });
+  kChart.priceScale('volume').applyOptions({
+    scaleMargins: { top: 0.8, bottom: 0 },
+  });
+  volumeSeries.setData(dailyBars.map(b => ({
+    time: b.date,
+    value: b.volume,
+    color: b.close >= b.open ? 'rgba(76,175,80,0.3)' : 'rgba(239,83,80,0.3)',
+  })));
+
+  // ---- MACD 图 ----
+  const mChart = LightweightCharts.createChart(macdEl, chartOptions);
+
+  // MACD 柱状图（红绿柱）
+  const macdHistSeries = mChart.addHistogramSeries({
+    priceScaleId: 'macd',
+    priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+  });
+  macdHistSeries.setData(dailyBars.filter(b => b.macd != null).map(b => ({
+    time: b.date,
+    value: b.macd,
+    color: b.macd >= 0 ? '#4caf50' : '#ef5350',
+  })));
+
+  // DIF 线
+  const difSeries = mChart.addLineSeries({
+    color: '#4fc3f7', lineWidth: 1.5,
+    priceScaleId: 'macd',
+    priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+  });
+  difSeries.setData(dailyBars.filter(b => b.dif != null).map(b => ({
+    time: b.date, value: b.dif,
+  })));
+
+  // DEA 线
+  const deaSeries = mChart.addLineSeries({
+    color: '#ffa726', lineWidth: 1.5,
+    priceScaleId: 'macd',
+    priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+  });
+  deaSeries.setData(dailyBars.filter(b => b.dea != null).map(b => ({
+    time: b.date, value: b.dea,
+  })));
+
+  // ---- 图例更新函数 ----
+  // 按日期索引数据，方便查找
+  const barByDate = {};
+  dailyBars.forEach(b => { barByDate[b.date] = b; });
+  const lastBar = dailyBars[dailyBars.length - 1];
+
+  function updateKlineLegend(bar) {
+    if (!bar) return;
+    const chg = bar.open ? ((bar.close - bar.open) / bar.open * 100) : 0;
+    const chgColor = chg >= 0 ? '#4caf50' : '#ef5350';
+    const chgSign = chg >= 0 ? '+' : '';
+    const ma5 = bar.ma5 != null ? bar.ma5.toFixed(2) : '-';
+    const ma10 = bar.ma10 != null ? bar.ma10.toFixed(2) : '-';
+    const ma20 = bar.ma20 != null ? bar.ma20.toFixed(2) : '-';
+    const ma60 = bar.ma60 != null ? bar.ma60.toFixed(2) : '-';
+    document.getElementById('klineLegend').innerHTML = `
+      <span class="chart-legend-title">日K</span>
+      <span class="lg-item"><span class="lg-label">开</span><span class="lg-val" style="color:#c8d0dc">${bar.open.toFixed(2)}</span></span>
+      <span class="lg-item"><span class="lg-label">高</span><span class="lg-val" style="color:#4caf50">${bar.high.toFixed(2)}</span></span>
+      <span class="lg-item"><span class="lg-label">低</span><span class="lg-val" style="color:#ef5350">${bar.low.toFixed(2)}</span></span>
+      <span class="lg-item"><span class="lg-label">收</span><span class="lg-val" style="color:${chgColor}">${bar.close.toFixed(2)}</span></span>
+      <span class="lg-item"><span class="lg-val" style="color:${chgColor};font-size:10px">${chgSign}${chg.toFixed(2)}%</span></span>
+      <span class="lg-item"><span class="lg-label" style="color:#f5c878">MA5</span><span class="lg-val" style="color:#f5c878">${ma5}</span></span>
+      <span class="lg-item"><span class="lg-label" style="color:#42a5f5">MA10</span><span class="lg-val" style="color:#42a5f5">${ma10}</span></span>
+      <span class="lg-item"><span class="lg-label" style="color:#ab47bc">MA20</span><span class="lg-val" style="color:#ab47bc">${ma20}</span></span>
+      <span class="lg-item"><span class="lg-label" style="color:#26a69a">MA60</span><span class="lg-val" style="color:#26a69a">${ma60}</span></span>`;
+  }
+
+  function updateMacdLegend(bar) {
+    if (!bar) return;
+    const difColor = bar.dif >= 0 ? '#4caf50' : '#ef5350';
+    const deaColor = bar.dea >= 0 ? '#4caf50' : '#ef5350';
+    const macdColor = bar.macd >= 0 ? '#4caf50' : '#ef5350';
+    document.getElementById('macdLegend').innerHTML = `
+      <span class="chart-legend-title">MACD</span>
+      <span class="lg-item"><span class="lg-label" style="color:#4fc3f7">DIF</span><span class="lg-val" style="color:#4fc3f7">${bar.dif != null ? bar.dif.toFixed(4) : '-'}</span></span>
+      <span class="lg-item"><span class="lg-label" style="color:#ffa726">DEA</span><span class="lg-val" style="color:#ffa726">${bar.dea != null ? bar.dea.toFixed(4) : '-'}</span></span>
+      <span class="lg-item"><span class="lg-label">MACD</span><span class="lg-val" style="color:${macdColor}">${bar.macd != null ? bar.macd.toFixed(4) : '-'}</span></span>`;
+  }
+
+  // 默认显示最新一天数据
+  updateKlineLegend(lastBar);
+  updateMacdLegend(lastBar);
+
+  // ---- 十字光标同步 + 图例联动 ----
+  let syncing = false;
+  kChart.subscribeCrosshairMove(param => {
+    if (syncing) return;
+    syncing = true;
+    if (param.time) {
+      mChart.setCrosshairPosition(0, param.time, macdHistSeries);
+      const b = barByDate[param.time];
+      if (b) { updateKlineLegend(b); updateMacdLegend(b); }
+    } else {
+      mChart.clearCrosshairPosition();
+      updateKlineLegend(lastBar);
+      updateMacdLegend(lastBar);
+    }
+    syncing = false;
+  });
+  mChart.subscribeCrosshairMove(param => {
+    if (syncing) return;
+    syncing = true;
+    if (param.time) {
+      kChart.setCrosshairPosition(0, param.time, candleSeries);
+      const b = barByDate[param.time];
+      if (b) { updateKlineLegend(b); updateMacdLegend(b); }
+    } else {
+      kChart.clearCrosshairPosition();
+      updateKlineLegend(lastBar);
+      updateMacdLegend(lastBar);
+    }
+    syncing = false;
+  });
+
+  // ---- 时间轴同步锁定（参考 gamma/market-viewer） ----
+  let syncingRange = false;
+  kChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (syncingRange || !range) return;
+    syncingRange = true;
+    mChart.timeScale().setVisibleLogicalRange(range);
+    syncingRange = false;
+  });
+  mChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (syncingRange || !range) return;
+    syncingRange = true;
+    kChart.timeScale().setVisibleLogicalRange(range);
+    syncingRange = false;
+  });
+
+  // 等布局完成后，强制设置显示全部 30 根 K 线
+  requestAnimationFrame(() => {
+    const fullRange = { from: -1, to: dailyBars.length };
+    kChart.timeScale().setVisibleLogicalRange(fullRange);
+    mChart.timeScale().setVisibleLogicalRange(fullRange);
+  });
+
 }
 
 /* ===== 过滤器 ===== */
 function renderFilter() {
   const tiers = ['A','B1','B2','B3','B4','C'];
-  const labels = {A:'A',B1:'B1',B2:'B2',B3:'B3',B4:'B4',C:'C'};
   const colors = {A:'#4fc3f7',B1:'#ab47bc',B2:'#ff7043',B3:'#66bb6a',B4:'#ffa726',C:'#78909c'};
   document.getElementById('tierFilter').innerHTML = tiers.map(t => {
     const cls = activeTiers.has(t) ? 'active' : '';
-    return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${colors[t]};border-color:${colors[t]}" onclick="toggleTier('${t}')">${labels[t]}</span>`;
+    return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${colors[t]};border-color:${colors[t]}" onclick="toggleTier('${t}')">${t}</span>`;
   }).join('');
 }
 function toggleTier(t) {
@@ -335,18 +571,17 @@ function toggleTier(t) {
 }
 
 /* ===== 排序状态 ===== */
-let sortKey = null;   // 'strike' | 'expiry_close' | null
-let sortDir = 'desc'; // 'asc' | 'desc'
+let sortKey = null;
+let sortDir = 'desc';
 
 function sortTable(key) {
   if (sortKey === key) {
     if (sortDir === 'desc') sortDir = 'asc';
-    else { sortKey = null; sortDir = 'desc'; } // 第三次点击恢复默认
+    else { sortKey = null; sortDir = 'desc'; }
   } else {
     sortKey = key;
     sortDir = 'desc';
   }
-  // 更新表头样式
   document.querySelectorAll('th.sortable').forEach(th => {
     th.classList.remove('sort-asc', 'sort-desc');
     if (sortKey && th.dataset.sort === sortKey) {
@@ -356,7 +591,6 @@ function sortTable(key) {
   renderTable(currentWeeks);
 }
 
-// 绑定排序点击
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('th.sortable').forEach(th => {
     th.addEventListener('click', () => sortTable(th.dataset.sort));
@@ -374,96 +608,116 @@ function renderTable(weeks) {
       return sortDir === 'asc' ? va - vb : vb - va;
     });
   }
+  const today = new Date(); today.setHours(0,0,0,0);
   const rows = filtered.map((w, idx) => {
-    const pCls = portionClass(w.portion);
     const isPending = w.pending === true;
     const tc = TIER_COLORS[w.tier];
     const printHide = idx >= 8 ? ' print-hide-row' : '';
 
-    // 层级标签
+    // 距到期日剩余天数：到期当天=1天，到期次日=0天
+    let pendingText = '<span class="pending-text">进行中</span>';
+    if (isPending && w.expiry_date) {
+      const expiry = new Date(w.expiry_date + 'T00:00:00');
+      const diff = Math.ceil((expiry - today) / 86400000);
+      const daysLeft = Math.max(0, diff + 1);  // 到期当天 diff=0 → 1天；次日 diff=-1 → 0天
+      pendingText = `<span class="pending-text">还剩<span style="color:#4fc3f7;font-weight:bold">${daysLeft}</span>天</span>`;
+    }
+
     const tierTag = tc
       ? `<span class="tag" style="background:${tc.bg};color:${tc.color};border:1px solid ${tc.color}">${w.tier} ${w.otm}%</span>`
       : w.tier;
 
-    // 行背景
     const rowBg = tc ? tc.bg : 'transparent';
     const pendingBorder = isPending ? ';border-left:3px solid #5c6bc0' : '';
 
-    // 各列值
     const strikeCell = w.strike != null ? fmt(w.strike) : '<span class="pending-text">-</span>';
-    const expiryCell = w.expiry_date || '<span class="pending-text">-</span>';
 
-    // 到期价
+    // 期权合约列：合约名 + DTE
+    let optCell;
+    if (w.option_symbol) {
+      optCell = `<span style="color:#4fc3f7;font-size:11px">${w.option_symbol}</span><br><span style="color:#6b7b8d;font-size:10px">DTE ${w.option_dte}天</span>`;
+    } else if (isPending) {
+      optCell = pendingText;
+    } else {
+      optCell = '<span style="color:#546e7a;font-size:10px">无数据</span>';
+    }
+
+    // 期权价格列：收盘价 / VWAP
+    let optPriceCell;
+    if (w.option_price != null) {
+      optPriceCell = `<span style="font-weight:bold">${w.option_price.toFixed(2)}</span><br><span style="color:#6b7b8d;font-size:10px">近似VWAP ${w.option_vwap.toFixed(2)}</span>`;
+    } else if (isPending) {
+      optPriceCell = pendingText;
+    } else {
+      optPriceCell = '-';
+    }
+
     let expiryCloseCell;
     if (w.expiry_close != null) {
       expiryCloseCell = fmt(w.expiry_close);
     } else if (isPending) {
-      expiryCloseCell = '<span class="pending-text">进行中</span>';
+      expiryCloseCell = pendingText;
     } else {
       expiryCloseCell = '-';
     }
 
-    // 结算差比：(到期价 - 行权价) / 行权价 × 100%
     let settleDiffCell;
     if (w.settle_diff != null) {
       const diffColor = w.settle_diff > 0 ? '#4caf50' : '#ef5350';
       const diffSign = w.settle_diff > 0 ? '+' : '';
       settleDiffCell = `<span style="color:${diffColor};font-weight:bold">${diffSign}${w.settle_diff.toFixed(2)}%</span>`;
     } else if (isPending) {
-      settleDiffCell = '<span class="pending-text">进行中</span>';
+      settleDiffCell = pendingText;
     } else {
       settleDiffCell = '-';
     }
 
-    // 平稳到期：绿色勾 / 红色叉
     let safeCell;
     if (w.safe_expiry === true) {
       safeCell = '<span style="color:#4caf50;font-size:16px">✓</span>';
     } else if (w.safe_expiry === false) {
       safeCell = '<span style="color:#ef5350;font-size:16px">✗</span>';
     } else if (isPending) {
-      safeCell = '<span class="pending-text">进行中</span>';
+      safeCell = pendingText;
     } else {
       safeCell = '-';
     }
 
-    // 期间涨跌
     let pctCell;
     if (w.pct_change != null) {
       const barW = Math.min(Math.abs(w.pct_change) * 2.5, 40);
       const barCls = w.pct_change >= 0 ? 'bar-g' : 'bar-r';
       pctCell = `<span class="${pctClass(w.pct_change)}">${sign(w.pct_change,1)}%</span> <span class="bar ${barCls}" style="width:${barW}px"></span>`;
     } else if (isPending) {
-      pctCell = '<span class="pending-text">进行中</span>';
+      pctCell = pendingText;
     } else {
       pctCell = '-';
     }
 
-    // 期间最低
-    const lowCell = w.period_low != null ? fmt(w.period_low) : (isPending ? '<span class="pending-text">进行中</span>' : '-');
+    const lowCell = w.period_low != null ? fmt(w.period_low) : (isPending ? pendingText : '-');
 
-    // 距行权
     let lvsCell;
     if (w.low_vs_strike != null) {
       const lvsCls = w.low_vs_strike >= 0 ? 'safe' : 'danger';
       lvsCell = `<span class="${lvsCls}">${sign(w.low_vs_strike,1)}%</span>`;
     } else if (isPending) {
-      lvsCell = '<span class="pending-text">进行中</span>';
+      lvsCell = pendingText;
     } else {
       lvsCell = '-';
     }
 
     return `<tr class="${printHide}" style="background:${rowBg}${pendingBorder}">
       <td>${w.date}</td>
-      <td><span class="portion ${pCls}">P${w.portion}</span></td>
       <td>${tierTag}</td>
       <td>${w.otm != null ? w.otm + '%' : '-'}</td>
       <td>${fmt(w.close)}</td>
       <td>${strikeCell}</td>
-      <td>${expiryCell}</td>
+      <td>${optCell}</td>
+      <td>${optPriceCell}</td>
       <td>${expiryCloseCell}</td>
       <td>${settleDiffCell}</td>
       <td>${safeCell}</td>
+      <td>${w.recovery_days != null ? `<span style="color:#ef5350;font-weight:bold">${w.recovery_days}</span><span style="color:#6b7b8d;font-size:10px">天</span>` : (w.safe_expiry === false ? `<span style="color:#ef5350">未恢复[${w.recovery_gap != null ? w.recovery_gap.toFixed(1) + '%' : '-'}]</span>` : '-')}</td>
       <td>${pctCell}</td>
       <td>${lowCell}</td>
       <td>${lvsCell}</td>
@@ -479,13 +733,11 @@ const EMBEDDED_DATA = {};
 
 /* ===== 加载数据 ===== */
 function loadData() {
-  // 从内嵌数据中取第一个 key
   const tickers = Object.keys(EMBEDDED_DATA);
   if (tickers.length > 0) {
     renderData(EMBEDDED_DATA[tickers[0]]);
     return;
   }
-  // 从文件名推断 ticker（如 TQQQ.html → TQQQ）
   const match = location.pathname.match(/([A-Z0-9]+)\.html$/);
   const ticker = match ? match[1] : 'TQQQ';
   fetch(ticker + '.json')
@@ -503,15 +755,24 @@ function loadData() {
 function renderData(data) {
   document.getElementById('tickerName').textContent = data.ticker || '';
   const otm = data.otm_config || {otm_a: 0.10, otm_b: 0.15, otm_c: 0.25};
-  const pctA = (otm.otm_a * 100).toFixed(0);
-  const pctB = (otm.otm_b * 100).toFixed(0);
-  const pctC = ((otm.otm_c || 0.25) * 100).toFixed(0);
-  document.getElementById('strategyDesc').textContent =
-    `A 企稳双撑 (${pctA}% OTM) + B 弱势守底 (${pctB}% OTM) + C 兜底深虚观望 (${pctC}% OTM)`;
   renderOverview(data.summary, data.tiers);
   renderDecision(data.latest, otm);
   renderFilter();
   renderTable(data.weeks);
+  // 渲染图表（等 lightweight-charts 加载完成）
+  if (typeof LightweightCharts !== 'undefined') {
+    renderCharts(data.daily_bars);
+  } else {
+    // 等待脚本加载
+    const waitChart = setInterval(() => {
+      if (typeof LightweightCharts !== 'undefined') {
+        clearInterval(waitChart);
+        renderCharts(data.daily_bars);
+      }
+    }, 100);
+    // 5秒超时
+    setTimeout(() => clearInterval(waitChart), 5000);
+  }
 }
 
 /* ===== 导出 PNG ===== */
@@ -520,11 +781,9 @@ function exportPng() {
   btn.textContent = '导出中...';
   btn.disabled = true;
 
-  // 构建临时容器，只放需要导出的内容
   const tmp = document.createElement('div');
   tmp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1500px;background:#0a0e17;padding:20px;color:#c8d0dc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6';
 
-  // 复制头部（去掉按钮和select）
   const ticker = document.getElementById('tickerName').textContent || 'TQQQ';
   const headerHtml = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
     <span style="color:#e8ecf1;font-size:26px;font-weight:bold">Lambda 策略系统</span>
@@ -532,20 +791,16 @@ function exportPng() {
   </div>`;
   tmp.innerHTML = headerHtml;
 
-  // 复制概览行
   tmp.appendChild(document.getElementById('overviewRow').cloneNode(true));
 
-  // 复制决策面板
   const box = document.querySelector('.box');
   tmp.appendChild(box.cloneNode(true));
 
-  // 最近8周小标题
   const label = document.createElement('div');
   label.style.cssText = 'color:#8b95a5;font-size:14px;margin:16px 0 8px';
   label.textContent = '最近 8 周操作明细';
   tmp.appendChild(label);
 
-  // 复制表格，只保留前8行
   const tableWrap = document.createElement('div');
   const origTable = document.querySelector('table.weekly');
   const tbl = origTable.cloneNode(true);
@@ -555,7 +810,6 @@ function exportPng() {
   tableWrap.appendChild(tbl);
   tmp.appendChild(tableWrap);
 
-  // 复制风险提示
   tmp.appendChild(document.querySelector('.risk-note').cloneNode(true));
 
   document.body.appendChild(tmp);
@@ -581,12 +835,19 @@ function exportPng() {
   });
 }
 
-/* ===== 动态加载 html2canvas ===== */
+/* ===== 动态加载外部库 ===== */
 (function(){
-  var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-  s.onerror = function(){ console.log('html2canvas 加载失败，导出功能不可用'); };
-  document.head.appendChild(s);
+  // html2canvas（导出用）
+  var s1 = document.createElement('script');
+  s1.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+  s1.onerror = function(){ console.log('html2canvas 加载失败，导出功能不可用'); };
+  document.head.appendChild(s1);
+
+  // lightweight-charts（日K+MACD图表）
+  var s2 = document.createElement('script');
+  s2.src = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4/dist/lightweight-charts.standalone.production.js';
+  s2.onerror = function(){ console.log('lightweight-charts 加载失败，图表不可用'); };
+  document.head.appendChild(s2);
 })();
 
 /* 启动 */

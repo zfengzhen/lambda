@@ -17,7 +17,7 @@ import pandas as pd
 # ---- 策略常量 ----
 DEFAULT_OTM_A = 0.10  # A 层默认 OTM 幅度
 DEFAULT_OTM_B = 0.15  # B 层默认 OTM 幅度
-DEFAULT_OTM_C = 0.25  # C 层（跳过）对比用 OTM 幅度
+DEFAULT_OTM_C = 0.25  # C 层（兜底深虚观望）OTM 幅度
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
 LEVERAGE_MAP = {
@@ -41,6 +41,16 @@ def get_otm_for_ticker(ticker: str) -> tuple[float, float, float]:
 
 EXPIRY_WEEKS = 3      # 到期周数
 TRADING_DAYS_YEAR = 252
+
+# ---- NYSE 交易日历（懒加载） ----
+_nyse_calendar = None
+
+def _get_nyse_calendar():
+    global _nyse_calendar
+    if _nyse_calendar is None:
+        import exchange_calendars as xcals
+        _nyse_calendar = xcals.get_calendar("XNYS")
+    return _nyse_calendar
 
 
 def compute_hist_vol(closes: pd.Series, window: int = 20) -> float:
@@ -132,15 +142,25 @@ def classify_tier(row: dict) -> str:
     return "C"
 
 
-def find_expiry_friday(entry_date: datetime.date, weeks: int = 3) -> datetime.date:
+def find_expiry_date(entry_date: datetime.date, weeks: int = 3) -> datetime.date:
     """
-    从 entry_date 所在周的周一起算，向后推 weeks 整周后的周五。
-    即：monday + weeks * 7 + 4 天。
-    例：周一 2026-01-05, weeks=3 → 2026-01-05 + 25 = 2026-01-30（周五）
+    从 entry_date 所在周的周一起算，向后推 weeks 整周，
+    返回该目标周内最后一个美股交易日（NYSE session）。
+    普通周返回周五；遇假日（如 Good Friday）则回退到该周最后交易日。
     """
     monday = entry_date - datetime.timedelta(days=entry_date.weekday())
-    friday = monday + datetime.timedelta(weeks=weeks, days=4)
-    return friday
+    target_monday = monday + datetime.timedelta(weeks=weeks)
+    target_friday = target_monday + datetime.timedelta(days=4)
+
+    cal = _get_nyse_calendar()
+    # 取目标周一到周五范围内的所有交易日，返回最后一个
+    sessions = cal.sessions_in_range(
+        pd.Timestamp(target_monday), pd.Timestamp(target_friday)
+    )
+    if len(sessions) == 0:
+        # 极端情况：整周无交易日（理论上不会发生），回退到周五
+        return target_friday
+    return sessions[-1].date()
 
 
 def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
@@ -167,15 +187,13 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         tier = classify_tier(row)
         entry_date = row["date"]
         close = row["close"]
-        portion = (idx % 4) + 1  # int 1-4
-
         # OTM 幅度与行权价：A=10%, B=15%, C=25%
         otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
         otm = int(otm_frac * 100)  # 10 或 15
         strike = round(close * (1 - otm_frac), 2)
 
         # 到期日（3 周后周五）
-        expiry_date = find_expiry_friday(entry_date, weeks=EXPIRY_WEEKS)
+        expiry_date = find_expiry_date(entry_date, weeks=EXPIRY_WEEKS)
 
         # 查到期日收盘价
         pending = False
@@ -215,9 +233,22 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
             # 平稳到期：结算差比 > 0（到期价高于行权价，未被行权）
             safe_expiry = settle_diff > 0
 
+        # 未平稳到期时，计算恢复天数：到期日后最早收盘价 > 行权价的自然日数
+        recovery_days = None
+        recovery_gap = None  # 未恢复时，最新收盘价距 strike 的百分比差距
+        if safe_expiry is False:
+            after = daily[daily["date"] > expiry_date].sort_values("date")
+            recovered = after[after["close"] > strike]
+            if not recovered.empty:
+                recovery_date = recovered.iloc[0]["date"]
+                recovery_days = (recovery_date - expiry_date).days
+            else:
+                # 未恢复：用最新收盘价算距 strike 的差距
+                latest_close = float(daily.iloc[-1]["close"])
+                recovery_gap = round((latest_close - strike) / strike * 100, 1)
+
         results.append({
             "date": str(entry_date),
-            "portion": portion,
             "close": close,
             "tier": tier,
             "otm": otm,
@@ -229,6 +260,8 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
             "low_vs_strike": low_vs_strike,
             "settle_diff": settle_diff,
             "safe_expiry": safe_expiry,
+            "recovery_days": recovery_days,
+            "recovery_gap": recovery_gap,
             "pending": pending,
         })
 
@@ -249,7 +282,6 @@ def compute_summary(weeks: list[dict]) -> dict:
 
     return {
         "total_weeks": len(weeks),
-        "sell_count": len(weeks),
         "settled": len(settled),
         "pending": len(pending),
         "safe_count": safe_count,
@@ -327,7 +359,7 @@ def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
     strike_b = round(close * (1 - otm_b), 2)
     strike_c = round(close * (1 - otm_c), 2)
 
-    expiry_date = find_expiry_friday(row["date"], weeks=EXPIRY_WEEKS)
+    expiry_date = find_expiry_date(row["date"], weeks=EXPIRY_WEEKS)
 
     return {
         "date": str(row["date"]),
