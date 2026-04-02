@@ -21,7 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB（S3 客户端复用 flat_file_fetcher）
 ├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
 ├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
-├── notify.py            # 通知推送
+├── notify.py            # Telegram 截图推送：扫描 output/*.png → 发送 → 删除
+├── com.lambda.scheduled-notify.plist  # macOS launchd 定时任务（每日自动运行策略+推送）
 │
 ├── output/              # 运行产物（gitignore）
 │   ├── market_data.duckdb        # 本地期权/股票数据库
@@ -33,7 +34,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── .venv/               # Python 虚拟环境（不提交）
 └── docs/                # 文档 + API 参考
     ├── api/             # API 文档（Massive 等）
+    ├── superpowers/     # 实现计划与设计文档
     ├── strategy-*.md/html  # 策略说明文档
+    ├── scheduled-notify.md  # Telegram 定时推送配置说明
     └── entry-timing-research.md  # 入场限价优化研究报告
 ```
 
@@ -93,6 +96,8 @@ python -m pytest tests/ -v
 - `MASSIVE_S3_SECRET_KEY` — S3 Secret Key，期权 Flat Files 下载必须设置
 - `MASSIVE_S3_ENDPOINT` — 可选，默认 `https://files.massive.com`
 - `MASSIVE_S3_BUCKET` — 可选，默认 `flatfiles`
+- `TELEGRAM_BOT_TOKEN` — Telegram Bot API Token，`notify.py` 推送必须设置
+- `TELEGRAM_CHAT_ID` — Telegram 接收者 ID，`notify.py` 推送必须设置
 
 所有 key 存放在 `~/.zshrc`，使用前 `source ~/.zshrc`。
 
@@ -102,6 +107,9 @@ python -m pytest tests/ -v
 - **flat_files_cache 是永久缓存**：`output/flat_files_cache/*.csv.gz` 不会自动清理，重跑直接复用，无需重新下载。
 - **INSERT OR IGNORE**：`insert_option_bars_from_csv` 使用 `INSERT OR IGNORE`，同月重跑安全，不会报主键冲突。
 - **ensure_synced 以 equity_bars 最新日期为基准**：空库时同步近 2 年；有数据时从最新日期次日增量补齐；数据已是昨天则直接跳过，< 1 秒返回。
+- **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
+- **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
+- **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
 
 ## 开发与提交规范
 

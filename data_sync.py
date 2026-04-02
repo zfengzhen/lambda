@@ -20,17 +20,39 @@ _FULL_SYNC_YEARS = 2
 
 
 def ensure_synced(tickers: list[str], api_key: str) -> None:
-    """确保 DuckDB 数据最新。空库同步近 2 年，有数据增量补到昨天。"""
+    """确保 DuckDB 数据最新。空库同步近 2 年，有数据增量补到昨天。
+
+    流程：
+    1. 同步 splits 表，检测新拆股事件
+    2. 有新拆股 → 清空该 ticker 数据（触发全量重拉）
+    3. 同步 equity_bars（adjusted=true）
+    4. 同步 option_bars（入库时按因子调整）
+    """
     data_store.init_db()
     today = datetime.date.today()
     to_date = str(today - datetime.timedelta(days=1))
+    full_sync_from = str(today - datetime.timedelta(days=365 * _FULL_SYNC_YEARS))
 
+    # ── 1. 同步拆股数据，检测新事件 ──
+    need_purge = set()
+    if tickers and api_key:
+        for ticker in tickers:
+            new_splits = rest_downloader.download_splits(ticker, api_key)
+            if new_splits:
+                need_purge.add(ticker)
+
+    # ── 2. 有新拆股 → 清空数据 ──
+    for ticker in need_purge:
+        logger.info(f"[sync] {ticker} 检测到新拆股，清空数据准备全量重拉")
+        data_store.delete_ticker_data(ticker)
+
+    # ── 3. 确定同步日期范围 ──
     latest = data_store.get_latest_synced_date("equity")
-    if latest:
+    if need_purge or not latest:
+        from_date = full_sync_from
+    else:
         from_date = str(datetime.date.fromisoformat(latest)
                         + datetime.timedelta(days=1))
-    else:
-        from_date = str(today - datetime.timedelta(days=365 * _FULL_SYNC_YEARS))
 
     if from_date > to_date:
         logger.info("数据已是最新，无需同步")
