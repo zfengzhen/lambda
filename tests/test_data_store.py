@@ -231,3 +231,247 @@ def test_insert_csv_blank_volume_null(tmp_db, tmp_path):
     con.close()
     assert row[0] is None
     assert row[1] is None
+
+
+# ── splits 表 CRUD ──────────────────────────────────────────
+
+def test_init_creates_splits_table(tmp_db):
+    con = duckdb.connect(str(tmp_db))
+    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    assert "splits" in tables
+    con.close()
+
+
+def test_upsert_splits(tmp_db):
+    rows = [{"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2}]
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits(rows)
+    con = duckdb.connect(str(tmp_db))
+    result = con.execute("SELECT * FROM splits").fetchall()
+    con.close()
+    assert len(result) == 1
+    assert result[0][0] == "TQQQ"
+    assert result[0][2] == 1  # split_from
+    assert result[0][3] == 2  # split_to
+
+
+def test_upsert_splits_idempotent(tmp_db):
+    rows = [{"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2}]
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits(rows)
+        data_store.upsert_splits(rows)  # 重复写入
+    con = duckdb.connect(str(tmp_db))
+    count = con.execute("SELECT COUNT(*) FROM splits").fetchone()[0]
+    con.close()
+    assert count == 1
+
+
+def test_query_splits(tmp_db):
+    rows = [
+        {"ticker": "TQQQ", "exec_date": "2025-11-20",
+         "split_from": 1, "split_to": 2},
+        {"ticker": "QQQ", "exec_date": "2025-06-01",
+         "split_from": 1, "split_to": 3},
+    ]
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits(rows)
+        result = data_store.query_splits("TQQQ")
+    assert len(result) == 1
+    assert result[0]["ticker"] == "TQQQ"
+    assert result[0]["exec_date"] == "2025-11-20"
+    assert result[0]["split_from"] == 1
+    assert result[0]["split_to"] == 2
+
+
+def test_query_splits_empty(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        result = data_store.query_splits("TQQQ")
+    assert result == []
+
+
+# ── compute_split_factor ────────────────────────────────────
+
+def test_compute_split_factor_before_split(tmp_db):
+    """拆股前日期，因子 = split_from/split_to = 0.5"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        factor = data_store.compute_split_factor("TQQQ", "2025-11-19")
+    assert factor == 0.5
+
+
+def test_compute_split_factor_on_split_date(tmp_db):
+    """拆股当天，不需要调整（已是新价格），因子 = 1.0"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        factor = data_store.compute_split_factor("TQQQ", "2025-11-20")
+    assert factor == 1.0
+
+
+def test_compute_split_factor_after_split(tmp_db):
+    """拆股后日期，因子 = 1.0"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        factor = data_store.compute_split_factor("TQQQ", "2025-12-01")
+    assert factor == 1.0
+
+
+def test_compute_split_factor_multiple_splits(tmp_db):
+    """多次拆股累乘：1:2 再 1:3，最早期因子 = (1/2)*(1/3) = 1/6"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-06-01",
+             "split_from": 1, "split_to": 2},
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 3},
+        ])
+        factor = data_store.compute_split_factor("TQQQ", "2025-05-01")
+    assert abs(factor - 1/6) < 1e-9
+
+
+def test_compute_split_factor_between_splits(tmp_db):
+    """两次拆股之间，只受后面那次影响：因子 = 1/3"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-06-01",
+             "split_from": 1, "split_to": 2},
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 3},
+        ])
+        factor = data_store.compute_split_factor("TQQQ", "2025-07-01")
+    assert abs(factor - 1/3) < 1e-9
+
+
+def test_compute_split_factor_no_splits(tmp_db):
+    """无拆股记录，因子 = 1.0"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        factor = data_store.compute_split_factor("TQQQ", "2025-11-19")
+    assert factor == 1.0
+
+
+# ── delete_ticker_data ──────────────────────────────────────
+
+def test_delete_ticker_data(tmp_db, tmp_path):
+    """清空指定 ticker 的 equity_bars + option_bars + sync_log"""
+    rows_eq = [
+        {"date": "2025-01-06", "ticker": "TQQQ", "open": 42.0,
+         "high": 43.0, "low": 41.0, "close": 42.5,
+         "volume": 1000000, "vwap": 42.3, "transactions": 5000},
+    ]
+    # 准备期权 CSV
+    opt_rows = [
+        {"ticker": "O:TQQQ250131P00038500", "volume": "10", "open": "0.85",
+         "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "3"},
+        {"ticker": "O:QQQ250131P00400000", "volume": "5", "open": "1.0",
+         "close": "1.2", "high": "1.5", "low": "0.9",
+         "window_start": "1000", "transactions": "2"},
+    ]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(opt_rows))
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_equity_bars(rows_eq)
+        data_store.insert_option_bars_from_csv(f, "2025-01-06")
+        data_store.write_sync_log("2025-01-06", "option_month", 100, "ok")
+        data_store.write_sync_log("2025-01-06", "equity", 1, "ok")
+
+        data_store.delete_ticker_data("TQQQ")
+
+        # equity_bars 被清空
+        eq = data_store.query_equity_bars("TQQQ", "1900-01-01", "2099-12-31")
+        assert eq == []
+        # option_bars: TQQQ 被删除，QQQ 保留
+        tqqq_opts = data_store.query_option_bars(
+            "O:TQQQ250131P00038500", "2025-01-06", "2025-01-06")
+        assert tqqq_opts == []
+        qqq_opts = data_store.query_option_bars(
+            "O:QQQ250131P00400000", "2025-01-06", "2025-01-06")
+        assert len(qqq_opts) == 1
+        # option_month sync_log 被清空，equity sync_log 保留
+        assert not data_store.is_synced("2025-01-06", "option_month")
+        assert data_store.is_synced("2025-01-06", "equity")
+
+
+# ── insert_option_bars_from_csv 拆股调整 ─────────────────────
+
+def test_insert_option_bars_with_split_factor(tmp_db, tmp_path):
+    """1:2 拆股，拆股前日期：价格减半，volume 翻倍，symbol strike 减半"""
+    rows = [{"ticker": "O:TQQQ250131P00038500", "volume": "100", "open": "4.00",
+             "close": "3.80", "high": "4.20", "low": "3.60",
+             "window_start": "1000", "transactions": "10"}]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        count = data_store.insert_option_bars_from_csv(
+            f, "2025-01-06", tickers=["TQQQ"],
+        )
+
+    assert count == 1
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute("SELECT symbol, open, high, low, close, volume FROM option_bars").fetchone()
+    con.close()
+    assert row[0] == "O:TQQQ250131P00019250"
+    assert abs(row[1] - 2.00) < 0.01  # open: 4.00 * 0.5
+    assert abs(row[2] - 2.10) < 0.01  # high: 4.20 * 0.5
+    assert abs(row[3] - 1.80) < 0.01  # low:  3.60 * 0.5
+    assert abs(row[4] - 1.90) < 0.01  # close: 3.80 * 0.5
+    assert row[5] == 200              # volume: 100 * 2
+
+
+def test_insert_option_bars_no_split(tmp_db, tmp_path):
+    """无拆股时，数据不变"""
+    rows = [{"ticker": "O:TQQQ250131P00038500", "volume": "100", "open": "4.00",
+             "close": "3.80", "high": "4.20", "low": "3.60",
+             "window_start": "1000", "transactions": "10"}]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        count = data_store.insert_option_bars_from_csv(f, "2025-01-06", tickers=["TQQQ"])
+
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute("SELECT symbol, open, close, volume FROM option_bars").fetchone()
+    con.close()
+    assert row[0] == "O:TQQQ250131P00038500"
+    assert abs(row[1] - 4.00) < 0.01
+    assert abs(row[2] - 3.80) < 0.01
+    assert row[3] == 100
+
+
+def test_insert_option_bars_after_split_date(tmp_db, tmp_path):
+    """拆股后日期，数据不变"""
+    rows = [{"ticker": "O:TQQQ260131P00019250", "volume": "100", "open": "2.00",
+             "close": "1.90", "high": "2.10", "low": "1.80",
+             "window_start": "1000", "transactions": "10"}]
+    f = tmp_path / "2025-12-01.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        count = data_store.insert_option_bars_from_csv(f, "2025-12-01", tickers=["TQQQ"])
+
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute("SELECT symbol, open, close, volume FROM option_bars").fetchone()
+    con.close()
+    assert row[0] == "O:TQQQ260131P00019250"
+    assert abs(row[1] - 2.00) < 0.01
+    assert row[3] == 100

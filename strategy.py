@@ -16,8 +16,8 @@ import pandas as pd
 
 # ---- 策略常量 ----
 DEFAULT_OTM_A = 0.10  # A 层默认 OTM 幅度
-DEFAULT_OTM_B = 0.15  # B 层默认 OTM 幅度
-DEFAULT_OTM_C = 0.25  # C 层（兜底深虚观望）OTM 幅度
+DEFAULT_OTM_B = 0.10  # B 层默认 OTM 幅度
+DEFAULT_OTM_C = 0.20  # C 层（兜底深虚观望）OTM 幅度
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
 LEVERAGE_MAP = {
@@ -209,7 +209,7 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         tier = classify_tier(row)
         entry_date = row["date"]
         close = row["close"]
-        # OTM 幅度与行权价：A=10%, B=15%, C=25%
+        # OTM 幅度与行权价：A=10%, B=10%, C=20%
         otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
         otm = int(otm_frac * 100)  # 10 或 15
         strike = round(close * (1 - otm_frac), 2)
