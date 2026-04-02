@@ -13,7 +13,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 ├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML → 截图 PNG
 ├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C)、OTM推导、回测
-├── fetch_client.py      # Massive REST API 多周期K线拉取
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
 │
@@ -83,7 +82,7 @@ python run.py TQQQ QQQ     # 多标的批量处理
 python data_sync.py                      # 同步所有标的（空库近 2 年，有数据增量）
 python data_sync.py --tickers TQQQ QQQ   # 同步指定标的
 
-# 运行测试
+# 运行测试（由用户手动执行，AI 不主动运行）
 python -m pytest tests/ -v
 ```
 
@@ -106,20 +105,9 @@ python -m pytest tests/ -v
 
 ## 开发与提交规范
 
-### 分支与 Worktree 管理
+### 分支
 
-所有新功能通过 `git worktree` 开发，分支统一放在 `feature/` 前缀下。Worktree 目录采用**项目同级专用目录**方式组织：
-
-```
-~/projects/
-├── my-app/                     # 主仓库 (main)，原则上不做开发
-├── my-app-worktrees/
-│   ├── feature-login/          # 对应分支 feature/feature-login
-│   └── feature-canvas/         # 对应分支 feature/feature-canvas
-└── other-project/
-```
-
-创建 worktree 由人工完成，AI 进入对应 worktree 目录后进行编码工作。
+所有新功能直接在主仓库建分支，分支统一放在 `feature/` 前缀下。不使用 git worktree。
 
 ### Commit 提交格式
 
@@ -136,25 +124,20 @@ python -m pytest tests/ -v
 示例：
 
 ```
-[feature/dev-canvas][功能] 增加canvas特效
-[feature/feature-login][修复] 修正登录token过期判断
-[feature/feature-login][重构] 提取用户验证逻辑为独立模块
+[feature/naming-refactor][重构] 统一函数命名，删除废弃接口
+[feature/db-first-flow][功能] 新增期权数据 DB 查询接口
+[feature/db-first-flow][修复] 修正 ensure_synced 增量起始日期计算
 ```
 
 ### 代码质量
 
 - 代码需附带简洁有力的注释
 - 所有开发完的内容需编写并通过单元测试
+- 【重要】测试用例由用户手动运行，AI 不主动执行测试命令
 - 修改模块的 API、参数、输出格式等接口变更时，须同步更新对应模块的 `README.md`
 
 ### Git 操作偏好
 
-- 不要自动 commit，等用户指示
-- 多个 commit 可能需要 squash，先确认
-
-### 提交与合并流程
-
-1. AI 完成编码和单元测试
-2. 每次 git 提交前需**人工预览确认**，预览时附带提交标题
-3. 功能开发完成后，合并到 `main` 需**人工确认**后再执行
-4. 合并完成后清理 worktree（`git worktree remove`）
+- 【重要】不要自动 commit，等用户指示
+- 【重要】每次 git 提交前需**人工预览确认**，预览时附带提交标题
+- 合并到 main 需人工确认后再执行

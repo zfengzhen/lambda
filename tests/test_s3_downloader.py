@@ -84,11 +84,6 @@ def test_download_and_store_day_skips_existing(tmp_path, mock_s3):
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
-        data_store.upsert_option_bars([{
-            "date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
-            "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87,
-            "volume": 10, "transactions": 3,
-        }])
         data_store.write_sync_log("2025-01-06", "option", 1, "ok")
         count = s3_downloader.download_and_store_day("2025-01-06", mock_s3)
 
