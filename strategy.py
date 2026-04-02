@@ -142,6 +142,28 @@ def classify_tier(row: dict) -> str:
     return "C"
 
 
+def _extract_rules(row: dict) -> dict:
+    """从周数据行提取决策规则详情，供前端决策面板展示。"""
+    close = row["close"]
+    macd_today = row["macd"]
+    macd_yesterday = row["prev_macd"]
+    ma20 = row["ma20"]
+    return {
+        "macd_today": macd_today,
+        "macd_yesterday": macd_yesterday,
+        "macd_narrow": abs(macd_today) < abs(macd_yesterday),
+        "p5_pp": row["pivot_5_pp"],
+        "above_p5": close > row["pivot_5_pp"],
+        "p30_pp": row["pivot_30_pp"],
+        "above_p30": close > row["pivot_30_pp"],
+        "ma20": ma20,
+        "ma60": row["ma60"],
+        "dif": row["dif"],
+        "hist_vol": row["hist_vol"],
+        "ma20_dist": round((close - ma20) / ma20 * 100, 2),
+    }
+
+
 def find_expiry_date(entry_date: datetime.date, weeks: int = 3) -> datetime.date:
     """
     从 entry_date 所在周的周一起算，向后推 weeks 整周，
@@ -191,6 +213,9 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
         otm = int(otm_frac * 100)  # 10 或 15
         strike = round(close * (1 - otm_frac), 2)
+
+        # 决策规则详情，供前端悬浮面板展示
+        rules = _extract_rules(row)
 
         # 到期日（3 周后周五）
         expiry_date = find_expiry_date(entry_date, weeks=EXPIRY_WEEKS)
@@ -251,6 +276,7 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
             "date": str(entry_date),
             "close": close,
             "tier": tier,
+            "rules": rules,
             "otm": otm,
             "strike": strike,
             "expiry_date": str(expiry_date),
@@ -339,20 +365,7 @@ def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
     row = weekly_rows[-1]
     tier = classify_tier(row)
     close = row["close"]
-
-    # 规则命中详情（包含原始指标值）
-    macd_today = row["macd"]
-    macd_yesterday = row["prev_macd"]
-    macd_narrow = abs(macd_today) < abs(macd_yesterday)
-    p5_pp = row["pivot_5_pp"]
-    above_p5 = close > p5_pp
-    p30_pp = row["pivot_30_pp"]
-    above_p30 = close > p30_pp
-    ma20 = row["ma20"]
-    ma60 = row["ma60"]
-    dif = row["dif"]
-    hist_vol = row["hist_vol"]
-    ma20_dist = round((close - ma20) / ma20 * 100, 2)
+    rules = _extract_rules(row)
 
     # 始终计算三档行权价
     strike_a = round(close * (1 - otm_a), 2)
@@ -365,20 +378,7 @@ def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
         "date": str(row["date"]),
         "close": close,
         "tier": tier,
-        "rules": {
-            "macd_today": macd_today,
-            "macd_yesterday": macd_yesterday,
-            "macd_narrow": macd_narrow,
-            "p5_pp": p5_pp,
-            "above_p5": above_p5,
-            "p30_pp": p30_pp,
-            "above_p30": above_p30,
-            "ma20": ma20,
-            "ma60": ma60,
-            "dif": dif,
-            "hist_vol": hist_vol,
-            "ma20_dist": ma20_dist,
-        },
+        "rules": rules,
         "strike_a": strike_a,
         "strike_b": strike_b,
         "strike_c": strike_c,
