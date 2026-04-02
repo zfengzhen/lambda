@@ -17,7 +17,7 @@ import pandas as pd
 # ---- 策略常量 ----
 DEFAULT_OTM_A = 0.10  # A 层默认 OTM 幅度
 DEFAULT_OTM_B = 0.10  # B 层默认 OTM 幅度
-DEFAULT_OTM_C = 0.20  # C 层（兜底深虚观望）OTM 幅度
+DEFAULT_OTM_C = 0.10  # C 层（兜底深虚观望）OTM 幅度
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
 LEVERAGE_MAP = {
@@ -194,7 +194,7 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
     weekly_rows: group_by_week 输出（正序）
     daily_df: 日线数据，含 date / close 列
     otm_a: A 层 OTM 幅度（默认 0.10）
-    otm_b: B 层 OTM 幅度（默认 0.15）
+    otm_b: B 层 OTM 幅度（默认 0.10）
 
     返回倒序（最新一周在前）的 list[dict]。
     C 层（skip）周：交易字段全部为 None，pending=False。
@@ -209,7 +209,6 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         tier = classify_tier(row)
         entry_date = row["date"]
         close = row["close"]
-        # OTM 幅度与行权价：A=10%, B=10%, C=20%
         otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
         otm = int(otm_frac * 100)  # 10 或 15
         strike = round(close * (1 - otm_frac), 2)
@@ -374,11 +373,15 @@ def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
 
     expiry_date = find_expiry_date(row["date"], weeks=EXPIRY_WEEKS)
 
+    otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
+    otm = int(otm_frac * 100)
+
     return {
         "date": str(row["date"]),
         "close": close,
         "tier": tier,
         "rules": rules,
+        "otm": otm,
         "strike_a": strike_a,
         "strike_b": strike_b,
         "strike_c": strike_c,

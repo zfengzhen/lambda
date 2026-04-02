@@ -158,8 +158,8 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
     <table class="weekly">
       <thead><tr>
         <th data-tip="每周首个交易日（通常为周一）">日期</th>
-        <th data-tip="策略分层：A 企稳双撑(10%OTM) / B1-B4 弱势守底(15%OTM) / C 兜底深虚观望(25%OTM)">层级</th>
-        <th data-tip="Out of The Money，虚值程度。A层10%，B层15%">OTM</th>
+        <th data-tip="策略分层：A 企稳双撑 / B1-B4 弱势守底 / C 兜底深虚观望">层级</th>
+        <th data-tip="Out of The Money，虚值程度">OTM</th>
         <th data-tip="入场日收盘价">收盘</th>
         <th data-tip="卖出 Put 的行权价 = 收盘价 × (1 - OTM%)，点击排序" data-sort="strike" class="sortable">行权价</th>
         <th data-tip="行权价向下取整对应的Put期权合约（含DTE天数）">期权合约</th>
@@ -167,7 +167,7 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
         <th data-tip="到期日收盘价（非交易日取前一个交易日），点击排序" data-sort="expiry_close" class="sortable">到期价</th>
         <th data-tip="(到期价 - 行权价) / 行权价 × 100%，正=未被行权，负=被行权，点击排序" data-sort="settle_diff" class="sortable">结算差比</th>
         <th data-tip="结算差比 > 0 即平稳到期（未被行权）">平稳到期</th>
-        <th data-tip="未平稳到期时，到期后股价恢复到行权价以上所需自然日数">恢复天数</th>
+        <th data-tip="未平稳到期时，到期后股价恢复到行权价以上所需自然日数，点击排序" data-sort="recovery_days" class="sortable">恢复天数</th>
         <th data-tip="(到期价 - 入场收盘价) / 入场收盘价 × 100%">期间涨跌</th>
         <th data-tip="入场日到到期日之间的最低收盘价">期间最低</th>
         <th data-tip="(期间最低 - 行权价) / 行权价 × 100%，正=安全，负=曾穿破行权价">距行权</th>
@@ -288,7 +288,7 @@ function buildDecisionHtml(data, title) {
       </table>
       <div class="conclusion-sell">
         <span style="color:${conclusionColor};font-size:16px;font-weight:bold">${tierLabel}</span>
-        <span style="color:${conclusionColor};font-weight:bold;margin-left:12px">${data.tier === 'A' ? '10' : data.tier === 'C' ? '25' : '15'}% OTM</span>
+        <span style="color:${conclusionColor};font-weight:bold;margin-left:12px">${data.otm}% OTM</span>
       </div>
       ${data.option_symbol ? `<div style="text-align:center;margin-top:12px">
         <div style="color:#4fc3f7;font-size:15px;font-weight:bold">${data.option_symbol}</div>
@@ -797,7 +797,7 @@ function loadData() {
 
 function renderData(data) {
   document.getElementById('tickerName').textContent = data.ticker || '';
-  const otm = data.otm_config || {otm_a: 0.10, otm_b: 0.15, otm_c: 0.25};
+  const otm = data.otm_config || {otm_a: 0.10, otm_b: 0.10, otm_c: 0.10};
   renderOverview(data.summary, data.tiers);
   renderDecision(data.latest, otm);
   renderFilter();
