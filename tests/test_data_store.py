@@ -54,33 +54,20 @@ def test_upsert_equity_bars_deduplicates(tmp_db):
     assert close == 99.0
 
 
-def test_upsert_option_bars(tmp_db):
-    rows = [
-        {"date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87,
-         "volume": 10, "transactions": 3},
-    ]
+def test_query_option_bars_returns_sorted(tmp_db, tmp_path):
+    row1 = [{"ticker": "O:TQQQ250131P00038500", "volume": "5", "open": "0.87",
+             "close": "0.92", "high": "0.95", "low": "0.85",
+             "window_start": "1000", "transactions": "2"}]
+    row2 = [{"ticker": "O:TQQQ250131P00038500", "volume": "10", "open": "0.85",
+             "close": "0.87", "high": "0.90", "low": "0.80",
+             "window_start": "1000", "transactions": "3"}]
+    f1 = tmp_path / "2025-01-07.csv.gz"
+    f2 = tmp_path / "2025-01-06.csv.gz"
+    f1.write_bytes(_make_csv_gz_ds(row1))
+    f2.write_bytes(_make_csv_gz_ds(row2))
     with patch.object(data_store, "DB_PATH", tmp_db):
-        data_store.upsert_option_bars(rows)
-    con = duckdb.connect(str(tmp_db))
-    result = con.execute(
-        "SELECT close FROM option_bars WHERE symbol='O:TQQQ250131P00038500'"
-    ).fetchone()
-    con.close()
-    assert result[0] == 0.87
-
-
-def test_query_option_bars_returns_sorted(tmp_db):
-    rows = [
-        {"date": "2025-01-07", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.87, "high": 0.95, "low": 0.85, "close": 0.92,
-         "volume": 5, "transactions": 2},
-        {"date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87,
-         "volume": 10, "transactions": 3},
-    ]
-    with patch.object(data_store, "DB_PATH", tmp_db):
-        data_store.upsert_option_bars(rows)
+        data_store.insert_option_bars_from_csv(f2, "2025-01-06")
+        data_store.insert_option_bars_from_csv(f1, "2025-01-07")
         bars = data_store.query_option_bars(
             "O:TQQQ250131P00038500", "2025-01-06", "2025-01-07"
         )
@@ -89,17 +76,19 @@ def test_query_option_bars_returns_sorted(tmp_db):
     assert bars[1]["date"] == "2025-01-07"
 
 
-def test_query_option_bars_filters_by_symbol(tmp_db):
+def test_query_option_bars_filters_by_symbol(tmp_db, tmp_path):
     rows = [
-        {"date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87,
-         "volume": 10, "transactions": 3},
-        {"date": "2025-01-06", "symbol": "O:QQQ250131P00400000",
-         "open": 1.0, "high": 1.5, "low": 0.9, "close": 1.2,
-         "volume": 5, "transactions": 2},
+        {"ticker": "O:TQQQ250131P00038500", "volume": "10", "open": "0.85",
+         "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "3"},
+        {"ticker": "O:QQQ250131P00400000", "volume": "5", "open": "1.0",
+         "close": "1.2", "high": "1.5", "low": "0.9",
+         "window_start": "1000", "transactions": "2"},
     ]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
     with patch.object(data_store, "DB_PATH", tmp_db):
-        data_store.upsert_option_bars(rows)
+        data_store.insert_option_bars_from_csv(f, "2025-01-06")
         bars = data_store.query_option_bars(
             "O:TQQQ250131P00038500", "2025-01-06", "2025-01-06"
         )
@@ -130,17 +119,19 @@ def test_get_latest_option_date_returns_none_when_empty(tmp_db):
     assert result is None
 
 
-def test_get_latest_option_date(tmp_db):
+def test_get_latest_option_date(tmp_db, tmp_path):
     rows = [
-        {"date": "2025-01-06", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.85, "high": 0.90, "low": 0.80, "close": 0.87,
-         "volume": 10, "transactions": 3},
-        {"date": "2025-01-07", "symbol": "O:TQQQ250131P00038500",
-         "open": 0.87, "high": 0.95, "low": 0.85, "close": 0.92,
-         "volume": 5, "transactions": 2},
+        {"ticker": "O:TQQQ250131P00038500", "volume": "10", "open": "0.85",
+         "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "3"},
     ]
+    f1 = tmp_path / "2025-01-06.csv.gz"
+    f2 = tmp_path / "2025-01-07.csv.gz"
+    f1.write_bytes(_make_csv_gz_ds(rows))
+    f2.write_bytes(_make_csv_gz_ds(rows))
     with patch.object(data_store, "DB_PATH", tmp_db):
-        data_store.upsert_option_bars(rows)
+        data_store.insert_option_bars_from_csv(f1, "2025-01-06")
+        data_store.insert_option_bars_from_csv(f2, "2025-01-07")
         result = data_store.get_latest_synced_date("option")
     assert result == "2025-01-07"
 

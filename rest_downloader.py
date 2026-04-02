@@ -18,9 +18,9 @@ MAX_RETRIES = 5
 RETRY_DELAY = 15
 
 
-def fetch_and_store_equity(ticker: str, from_date: str, to_date: str,
-                            api_key: str) -> int:
-    """拉取指定股票的日K并写入 equity_bars。
+def download_and_store_equity(ticker: str, from_date: str, to_date: str,
+                               api_key: str) -> int:
+    """从 Massive REST API 下载指定股票日K并写入 equity_bars。
 
     Args:
         ticker:    股票代码，如 "TQQQ"
@@ -96,6 +96,6 @@ def sync_equity(tickers: list[str], from_date: str, to_date: str,
     logger.info(f"[rest] 同步股票 {tickers} {from_date}~{to_date}")
     for ticker in tickers:
         try:
-            fetch_and_store_equity(ticker, from_date, to_date, api_key)
+            download_and_store_equity(ticker, from_date, to_date, api_key)
         except Exception as e:
             logger.error(f"[rest] {ticker} 同步失败: {e}")

@@ -22,13 +22,13 @@ SAMPLE_BARS = [
 ]
 
 
-def test_fetch_and_store_equity_writes_to_db(tmp_path):
+def test_download_and_store_equity_writes_to_db(tmp_path):
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
         with patch("rest_downloader.requests.get",
                    return_value=_mock_response(SAMPLE_BARS)):
-            count = rest_downloader.fetch_and_store_equity(
+            count = rest_downloader.download_and_store_equity(
                 "TQQQ", "2025-01-06", "2025-01-07", "test_api_key"
             )
     assert count == 2
@@ -43,19 +43,19 @@ def test_fetch_and_store_equity_writes_to_db(tmp_path):
     assert close == 42.5
 
 
-def test_fetch_and_store_equity_returns_zero_on_empty(tmp_path):
+def test_download_and_store_equity_returns_zero_on_empty(tmp_path):
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
         with patch("rest_downloader.requests.get",
                    return_value=_mock_response([])):
-            count = rest_downloader.fetch_and_store_equity(
+            count = rest_downloader.download_and_store_equity(
                 "TQQQ", "2025-01-06", "2025-01-07", "test_api_key"
             )
     assert count == 0
 
 
-def test_fetch_and_store_equity_handles_429(tmp_path):
+def test_download_and_store_equity_handles_429(tmp_path):
     db_path = tmp_path / "test.duckdb"
     mock_429 = MagicMock()
     mock_429.status_code = 429
@@ -66,7 +66,7 @@ def test_fetch_and_store_equity_handles_429(tmp_path):
         with patch("rest_downloader.requests.get",
                    side_effect=[mock_429, ok_resp]), \
              patch("rest_downloader.time.sleep"):
-            count = rest_downloader.fetch_and_store_equity(
+            count = rest_downloader.download_and_store_equity(
                 "TQQQ", "2025-01-06", "2025-01-07", "test_api_key"
             )
     assert count == 2
@@ -81,7 +81,7 @@ def test_sync_equity_calls_each_ticker(tmp_path):
     db_path = tmp_path / "test.duckdb"
     with patch.object(data_store, "DB_PATH", db_path):
         data_store.init_db()
-        with patch("rest_downloader.fetch_and_store_equity",
+        with patch("rest_downloader.download_and_store_equity",
                    return_value=2) as mock_fetch:
             rest_downloader.sync_equity(
                 ["TQQQ", "QQQ"], "2025-01-06", "2025-01-07", "test_key"

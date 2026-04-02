@@ -108,43 +108,6 @@ def upsert_equity_bars(rows: list[dict]) -> int:
     return len(rows)
 
 
-def upsert_option_bars(rows: list[dict]) -> int:
-    """批量写入/更新期权日K。主键冲突时覆盖。
-
-    # Deprecated: retained for test fixtures. For bulk CSV loading use insert_option_bars_from_csv().
-
-    Args:
-        rows: list of {date, symbol, open, high, low, close, volume, transactions}
-
-    Returns:
-        写入行数
-    """
-    if not rows:
-        return 0
-    con = _connect()
-    try:
-        con.executemany(
-            """
-            INSERT INTO option_bars
-                (date, symbol, open, high, low, close, volume, transactions)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (date, symbol) DO UPDATE SET
-                open         = excluded.open,
-                high         = excluded.high,
-                low          = excluded.low,
-                close        = excluded.close,
-                volume       = excluded.volume,
-                transactions = excluded.transactions
-            """,
-            [(r["date"], r["symbol"], r["open"], r["high"], r["low"],
-              r["close"], r.get("volume"), r.get("transactions"))
-             for r in rows],
-        )
-    finally:
-        con.close()
-    return len(rows)
-
-
 def insert_option_bars_from_csv(
     csv_path: "Path",
     date_str: str,

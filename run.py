@@ -47,8 +47,8 @@ def setup_logging():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-def fetch_daily_bars(ticker: str, api_key: str) -> pd.DataFrame | None:
-    """从 DuckDB 读取日K（自动触发增量同步）。返回含指标的 DataFrame，失败返回 None。"""
+def fetch_equity_bars(ticker: str, api_key: str) -> pd.DataFrame | None:
+    """从 DuckDB 读取股票日K（自动触发增量同步）。返回含指标的 DataFrame，失败返回 None。"""
     from data_sync import ensure_synced
     from indicators import add_ma, add_macd, add_dynamic_pivot
 
@@ -265,7 +265,7 @@ def main():
         ticker = ticker.upper()
         logger.info(f"===== {ticker} =====")
 
-        df = fetch_daily_bars(ticker, api_key)
+        df = fetch_equity_bars(ticker, api_key)
         if df is None:
             continue
 

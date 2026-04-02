@@ -8,11 +8,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from run import fetch_daily_bars, embed_to_html
+from run import fetch_equity_bars, embed_to_html
 
 
-class TestFetchDailyBars:
-    """从 DuckDB 读取日K（含增量同步）"""
+class TestFetchEquityBars:
+    """从 DuckDB 读取股票日K（含增量同步）"""
 
     @patch("data_sync.ensure_synced")
     @patch("data_store.query_equity_bars")
@@ -24,7 +24,7 @@ class TestFetchDailyBars:
              "volume": 100000, "vwap": 50.5, "transactions": 500}
             for i in range(1, 9)  # 8 行，足够计算 ma5
         ]
-        df = fetch_daily_bars("TQQQ", "test-key")
+        df = fetch_equity_bars("TQQQ", "test-key")
         assert df is not None
         assert "ma5" in df.columns
         mock_sync.assert_called_once_with(["TQQQ"], "test-key")
@@ -34,7 +34,7 @@ class TestFetchDailyBars:
     def test_returns_none_when_no_data(self, mock_query, mock_sync):
         """DuckDB 无数据时返回 None。"""
         mock_query.return_value = []
-        df = fetch_daily_bars("TQQQ", "test-key")
+        df = fetch_equity_bars("TQQQ", "test-key")
         assert df is None
 
     @patch("data_sync.ensure_synced")
@@ -42,7 +42,7 @@ class TestFetchDailyBars:
     def test_calls_ensure_synced_with_ticker(self, mock_query, mock_sync):
         """每次调用都触发 ensure_synced 以保证数据最新。"""
         mock_query.return_value = []
-        fetch_daily_bars("QQQ", "my-api-key")
+        fetch_equity_bars("QQQ", "my-api-key")
         mock_sync.assert_called_once_with(["QQQ"], "my-api-key")
 
 
