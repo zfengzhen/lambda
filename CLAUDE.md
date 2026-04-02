@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │
 ├── data_sync.py         # 数据同步 CLI：ensure_synced 自动判断全量/增量
 ├── data_store.py        # DuckDB 本地存储：建表、写入、查询（option_bars / equity_bars）
-├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB
+├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB（S3 客户端复用 flat_file_fetcher）
 ├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
 ├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
 ├── notify.py            # 通知推送
@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── output/              # 运行产物（gitignore）
 │   ├── market_data.duckdb        # 本地期权/股票数据库
 │   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（按日期命名）
-│   ├── {TICKER}.json             # 策略数据（供 HTML 生成用，不含 daily_bars）
+│   ├── {TICKER}.json             # 策略数据（含 daily_bars，供 HTML 生成用）
 │   └── {TICKER}.html             # 可视化报告
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖

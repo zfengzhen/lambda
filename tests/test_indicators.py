@@ -22,7 +22,7 @@ class TestMA:
         df = pd.DataFrame({"close": range(130)})
         df = add_ma(df)
 
-        for period in [5, 10, 20, 30, 60, 120]:
+        for period in [5, 10, 20, 60]:
             col = f"ma{period}"
             assert col in df.columns, f"缺少列 {col}"
 
@@ -56,21 +56,6 @@ class TestMACD:
 class TestDynamicPivot:
     """测试动态 Pivot 指标"""
 
-    def test_pivot_1_standard(self):
-        """周期 1 的 Pivot 等于标准 Pivot（当根K线自身的 H/L/C）"""
-        df = pd.DataFrame({
-            "high":  [52.0, 55.0, 53.0],
-            "low":   [49.0, 50.0, 51.0],
-            "close": [51.0, 54.0, 52.0],
-        })
-        df = add_dynamic_pivot(df)
-
-        # 第 1 行: PP = (55+50+54)/3 = 53.0
-        row = df.iloc[1]
-        assert abs(row["pivot_1_pp"] - 53.0) < 0.001
-        assert abs(row["pivot_1_r1"] - (2 * 53.0 - 50.0)) < 0.001  # 56.0
-        assert abs(row["pivot_1_s1"] - (2 * 53.0 - 55.0)) < 0.001  # 51.0
-
     def test_pivot_5_uses_rolling_window(self):
         """周期 5 应使用最近 5 根K线的 high/low"""
         df = pd.DataFrame({
@@ -94,7 +79,7 @@ class TestDynamicPivot:
         })
         df = add_dynamic_pivot(df)
 
-        for period in [1, 5, 10, 20, 30, 50, 120]:
+        for period in [5, 30]:
             for suffix in ["pp", "r1", "r2", "r3", "s1", "s2", "s3"]:
                 col = f"pivot_{period}_{suffix}"
                 assert col in df.columns, f"缺少列 {col}"

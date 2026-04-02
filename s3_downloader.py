@@ -10,29 +10,10 @@ import datetime
 import logging
 import os
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
 import data_store
-from flat_file_fetcher import download_day_file as _download_day_file
+from flat_file_fetcher import download_day_file as _download_day_file, make_s3_client
 
 logger = logging.getLogger(__name__)
-
-_BUCKET = os.environ.get("MASSIVE_S3_BUCKET", "flatfiles")
-_ENDPOINT = os.environ.get("MASSIVE_S3_ENDPOINT", "https://files.massive.com")
-_PREFIX = "us_options_opra/day_aggs_v1"
-
-
-def make_s3_client():
-    """从环境变量创建 S3 客户端。"""
-    return boto3.client(
-        "s3",
-        aws_access_key_id=os.environ["MASSIVE_S3_ACCESS_KEY"],
-        aws_secret_access_key=os.environ["MASSIVE_S3_SECRET_KEY"],
-        endpoint_url=_ENDPOINT,
-        config=Config(signature_version="s3v4"),
-    )
 
 
 def trading_months(from_date: str, to_date: str) -> list[tuple[int, int]]:
@@ -63,11 +44,6 @@ def trading_days(from_date: str, to_date: str) -> list[str]:
     return days
 
 
-def _already_synced(date_str: str) -> bool:
-    """检查该日期是否已在 sync_log 中有 ok 记录。"""
-    return data_store.is_synced(date_str, "option")
-
-
 def download_and_store_day(date_str: str, s3_client,
                             tickers: list[str] | None = None) -> int:
     """下载（或读取缓存）指定日期的期权全量文件并写入 DB。
@@ -75,7 +51,7 @@ def download_and_store_day(date_str: str, s3_client,
     Returns:
         写入行数；0 表示节假日/文件不存在；-1 表示已有数据跳过
     """
-    if _already_synced(date_str):
+    if data_store.is_synced(date_str, "option"):
         logger.debug(f"[s3] {date_str} 已同步，跳过")
         return -1
 

@@ -49,8 +49,8 @@ class TestFetchEquityBars:
 class TestEmbedToHtml:
     """HTML 生成"""
 
-    def test_embed_excludes_daily_bars(self, tmp_path, monkeypatch):
-        """嵌入 HTML 时不包含 daily_bars（向后兼容）"""
+    def test_embed_includes_daily_bars(self, tmp_path, monkeypatch):
+        """嵌入 HTML 时包含 daily_bars（供图表渲染）"""
         monkeypatch.setattr("run.OUTPUT_DIR", str(tmp_path))
         result = {
             "ticker": "TQQQ",
@@ -61,5 +61,5 @@ class TestEmbedToHtml:
         embed_to_html("TQQQ", result, template)
 
         html_content = (tmp_path / "TQQQ.html").read_text()
-        assert "daily_bars" not in html_content
+        assert "daily_bars" in html_content
         assert '"summary"' in html_content

@@ -195,6 +195,85 @@ def query_option_bars(symbol: str, from_date: str, to_date: str) -> list[dict]:
     ]
 
 
+def build_occ_symbol(ticker: str, expiry_date: str, strike: float,
+                     option_type: str = "P") -> str:
+    """构建 OCC 期权合约代码。
+
+    Args:
+        ticker: 标的代码，如 "TQQQ"
+        expiry_date: 到期日 "YYYY-MM-DD"
+        strike: 行权价（美元），如 30.0
+        option_type: "P" 或 "C"
+
+    Returns:
+        OCC 格式代码，如 "O:TQQQ260424P00030000"
+    """
+    yy = expiry_date[2:4]
+    mm = expiry_date[5:7]
+    dd = expiry_date[8:10]
+    strike_int = int(round(strike * 1000))
+    return f"O:{ticker}{yy}{mm}{dd}{option_type}{strike_int:08d}"
+
+
+def query_option_on_date(ticker: str, entry_date: str, expiry_date: str,
+                         strike: float) -> dict | None:
+    """查询最接近目标行权价的 Put 期权在入场日的价格。
+
+    在候选到期日（精确日 ±3 天）中查找 DB 里所有可用 Put 合约，
+    取 strike 最接近目标值的那个，返回入场日的 OHLCV。
+
+    Returns:
+        {symbol, date, open, high, low, close, volume, vwap} 或 None
+    """
+    from datetime import datetime, timedelta
+
+    # 生成候选到期日：精确日 → ±1 → ±2 → ±3
+    base = datetime.strptime(expiry_date, "%Y-%m-%d")
+    candidates = [expiry_date]
+    for offset in range(1, 4):
+        candidates.append((base - timedelta(days=offset)).strftime("%Y-%m-%d"))
+        candidates.append((base + timedelta(days=offset)).strftime("%Y-%m-%d"))
+
+    # 构建 symbol LIKE 模式：O:TQQQ260402P%
+    patterns = []
+    for exp in candidates:
+        yy, mm, dd = exp[2:4], exp[5:7], exp[8:10]
+        patterns.append(f"O:{ticker}{yy}{mm}{dd}P%")
+
+    con = _connect()
+    try:
+        # 查出入场日所有候选到期日的 Put 合约
+        placeholders = " OR ".join(["symbol LIKE ?"] * len(patterns))
+        rows = con.execute(
+            f"""
+            SELECT symbol, date, open, high, low, close, volume
+            FROM option_bars
+            WHERE ({placeholders}) AND date = ?
+            """,
+            patterns + [entry_date],
+        ).fetchall()
+    finally:
+        con.close()
+
+    if not rows:
+        return None
+
+    # 从 OCC symbol 提取 strike（末 8 位，单位千分之一美元）
+    def _extract_strike(symbol: str) -> float:
+        return int(symbol[-8:]) / 1000.0
+
+    # 取最接近目标 strike 的合约
+    best = min(rows, key=lambda r: abs(_extract_strike(r[0]) - strike))
+
+    vol = best[6] or 0
+    vwap = round((best[4] + best[5] + best[3]) / 3, 4) if vol > 0 else best[5]
+    return {
+        "symbol": best[0], "date": str(best[1]),
+        "open": best[2], "high": best[3], "low": best[4], "close": best[5],
+        "volume": vol, "vwap": round(vwap, 4),
+    }
+
+
 def query_equity_bars(ticker: str, from_date: str, to_date: str) -> list[dict]:
     """查询指定股票在日期范围内的日K数据。
 
