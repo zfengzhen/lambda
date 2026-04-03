@@ -691,3 +691,19 @@ def test_backfill_idempotent(tmp_db, tmp_path):
     count = con.execute("SELECT COUNT(*) FROM option_bars").fetchone()[0]
     con.close()
     assert count == 1
+
+
+def test_get_latest_equity_date_per_ticker(tmp_db):
+    """per-ticker 查询各自的最新日期。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_equity_bars([
+            {"date": "2026-04-01", "ticker": "TQQQ", "open": 50.0,
+             "high": 52.0, "low": 49.0, "close": 51.0,
+             "volume": 100000, "vwap": 50.5, "transactions": 500},
+            {"date": "2026-03-15", "ticker": "QQQ", "open": 450.0,
+             "high": 455.0, "low": 448.0, "close": 452.0,
+             "volume": 200000, "vwap": 451.0, "transactions": 1000},
+        ])
+        assert data_store.get_latest_equity_date("TQQQ") == "2026-04-01"
+        assert data_store.get_latest_equity_date("QQQ") == "2026-03-15"
+        assert data_store.get_latest_equity_date("SPY") is None

@@ -610,6 +610,21 @@ def get_latest_synced_date(data_type: str) -> str | None:
     return None
 
 
+def get_latest_equity_date(ticker: str) -> str | None:
+    """返回指定 ticker 在 equity_bars 中的最新日期，无数据返回 None。"""
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT MAX(date) FROM equity_bars WHERE ticker = ?",
+            [ticker],
+        ).fetchone()
+    finally:
+        con.close()
+    if result and result[0] is not None:
+        return str(result[0])
+    return None
+
+
 def write_sync_log(date: str, data_type: str, rows_written: int,
                    status: str, message: str = None) -> None:
     """写入一条同步记录。"""
