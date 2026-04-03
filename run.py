@@ -24,6 +24,7 @@ from strategy import (
     compute_latest,
     compute_hist_vol,
     get_otm_for_ticker,
+    DEFAULT_OTM,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,23 +114,22 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
 
     logger.info(f"[{ticker}] 有效数据 {len(df)} 行")
 
-    otm_a, otm_b, otm_c = get_otm_for_ticker(ticker)
-    logger.info(f"[{ticker}] OTM: A={otm_a*100:.0f}% B={otm_b*100:.0f}% C={otm_c*100:.0f}%")
+    otm = get_otm_for_ticker(ticker)
+    logger.info(f"[{ticker}] OTM: {' '.join(f'{t}={int(v*100)}%' for t,v in otm.items())}")
 
     weekly_rows = group_by_week(df)
-    weeks = backtest_weeks(weekly_rows, df, otm_a=otm_a, otm_b=otm_b, otm_c=otm_c)
+    weeks = backtest_weeks(weekly_rows, df, otm=otm)
 
     # 丰富期权数据：查询行权价向下取整的 Put 期权价格
     enrich_weeks_with_options(ticker, weeks)
 
     summary = compute_summary(weeks)
-    tiers = compute_tiers(weeks, otm_a=otm_a, otm_b=otm_b, otm_c=otm_c)
-    latest = compute_latest(weekly_rows, df, otm_a=otm_a, otm_b=otm_b, otm_c=otm_c)
+    tiers = compute_tiers(weeks, otm=otm)
+    latest = compute_latest(weekly_rows, df, otm=otm)
 
     # 为 latest 查询期权合约
     if latest:
-        lt_strike = latest.get("strike_a") if latest["tier"] == "A" else (
-            latest.get("strike_c") if latest["tier"] == "C" else latest.get("strike_b"))
+        lt_strike = latest.get("strikes", {}).get(latest["tier"])
         lt_opt = data_store.query_option_on_date(
             ticker, latest["date"], latest["expiry_date"], lt_strike or 0)
         if lt_opt:
@@ -171,7 +171,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         "ticker": ticker,
         "generated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "data_range": [dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d")],
-        "otm_config": {"otm_a": otm_a, "otm_b": otm_b, "otm_c": otm_c},
+        "otm_config": otm,
         "summary": summary,
         "tiers": tiers,
         "latest": latest,

@@ -4,7 +4,7 @@
 TQQQ Sell Put 策略的核心逻辑，包含：
 - 历史波动率计算
 - 按 ISO 周分组取首交易日
-- 五层分类决策树 (A / B1-B4 / C)
+- 分类决策树 (A / B1-B4 / C1-C4)
 - 到期日计算
 - 周级回测引擎（结算差比、平稳到期判定）
 - 汇总统计
@@ -15,9 +15,12 @@ import numpy as np
 import pandas as pd
 
 # ---- 策略常量 ----
-DEFAULT_OTM_A = 0.10  # A 层默认 OTM 幅度
-DEFAULT_OTM_B = 0.10  # B 层默认 OTM 幅度
-DEFAULT_OTM_C = 0.10  # C 层（兜底深虚观望）OTM 幅度
+# 基准 OTM（3 倍杠杆标的的默认值）
+DEFAULT_OTM = {
+    "A": 0.10,
+    "B1": 0.10, "B2": 0.10, "B3": 0.10, "B4": 0.10,
+    "C1": 0.10, "C2": 0.20, "C3": 0.10, "C4": 0.20,
+}
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
 LEVERAGE_MAP = {
@@ -26,17 +29,27 @@ LEVERAGE_MAP = {
     "QLD": 2, "SSO": 2,
 }
 
+# 层级中文名
+TIER_NAMES = {
+    "A": "企稳双撑",
+    "B1": "回调均线", "B2": "低波整理", "B3": "超跌支撑", "B4": "趋势动能弱",
+    "C1": "趋势延续", "C2": "过热追涨", "C3": "跌势减速", "C4": "加速下杀",
+}
 
-def get_otm_for_ticker(ticker: str) -> tuple[float, float, float]:
-    """根据标的杠杆倍数推导 OTM 参数 (otm_a, otm_b, otm_c)。
-    基准值为 3 倍杠杆：A=10%, B=15%, C=25%。
+ALL_TIERS = ["A", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4"]
+
+
+def get_otm_for_ticker(ticker: str) -> dict[str, float]:
+    """根据标的杠杆倍数推导各层 OTM。
+
+    基准值为 3 倍杠杆下的 DEFAULT_OTM。
     公式：floor(基准% × leverage / 3) / 100，结果为整数百分比。
     """
     leverage = LEVERAGE_MAP.get(ticker, 1)
-    otm_a = math.floor(DEFAULT_OTM_A * 100 * leverage / 3) / 100
-    otm_b = math.floor(DEFAULT_OTM_B * 100 * leverage / 3) / 100
-    otm_c = math.floor(DEFAULT_OTM_C * 100 * leverage / 3) / 100
-    return otm_a, otm_b, otm_c
+    return {
+        tier: math.floor(otm * 100 * leverage / 3) / 100
+        for tier, otm in DEFAULT_OTM.items()
+    }
 
 
 EXPIRY_WEEKS = 3      # 到期周数
@@ -106,7 +119,10 @@ def classify_tier(row: dict) -> str:
       B2 低波整理    hist_vol < 50 AND |MA20距离| <= 5%
       B3 超跌支撑    DIF < 0 AND Close > P30_PP
       B4 趋势动能弱  MA20 > MA60 AND DIF < 0
-      C  skip（兜底）
+      C1 趋势延续    Close >= MA20 AND |MA20偏离| <= 10%
+      C2 过热追涨    Close >= MA20 AND |MA20偏离| > 10%
+      C3 跌势减速    Close < MA60 AND |MACD| < |prev_MACD|（MACD 收窄）
+      C4 加速下杀    Close < MA60 AND |MACD| >= |prev_MACD|（MACD 放大）
     """
     close = row["close"]
     macd = row["macd"]
@@ -139,7 +155,16 @@ def classify_tier(row: dict) -> str:
     if ma20 > ma60 and dif < 0:
         return "B4"
 
-    return "C"
+    # ── C 类细分 ──
+    if close >= ma20:
+        if ma20_dist > 10:
+            return "C2"  # 过热追涨：价远超 MA20，超买回调风险大
+        return "C1"  # 趋势延续：价在 MA20 上方但偏离合理
+    if close < ma60:
+        if abs(macd) < abs(prev_macd):
+            return "C3"  # 跌势减速：MACD 收窄，空头力度递减
+        return "C4"  # 加速下杀：MACD 放大，下行动能增强
+    return "C1"  # 极少出现的 MA60 ≤ Close < MA20 边缘态
 
 
 def _extract_rules(row: dict) -> dict:
@@ -161,6 +186,7 @@ def _extract_rules(row: dict) -> dict:
         "dif": row["dif"],
         "hist_vol": row["hist_vol"],
         "ma20_dist": round((close - ma20) / ma20 * 100, 2),
+        "above_ma60": close >= row["ma60"],
     }
 
 
@@ -186,19 +212,18 @@ def find_expiry_date(entry_date: datetime.date, weeks: int = 3) -> datetime.date
 
 
 def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
-                    otm_a: float = DEFAULT_OTM_A, otm_b: float = DEFAULT_OTM_B,
-                    otm_c: float = DEFAULT_OTM_C) -> list[dict]:
+                    otm: dict[str, float] | None = None) -> list[dict]:
     """
     逐周回测：分层 → 定行权价 → 找到期日价格 → 判断是否平稳到期。
 
     weekly_rows: group_by_week 输出（正序）
     daily_df: 日线数据，含 date / close 列
-    otm_a: A 层 OTM 幅度（默认 0.10）
-    otm_b: B 层 OTM 幅度（默认 0.10）
+    otm: 各层 OTM 映射，默认 DEFAULT_OTM
 
     返回倒序（最新一周在前）的 list[dict]。
-    C 层（skip）周：交易字段全部为 None，pending=False。
     """
+    if otm is None:
+        otm = DEFAULT_OTM
     daily = daily_df.copy()
     daily["date"] = pd.to_datetime(daily["date"]).dt.date
     last_data_date = daily["date"].max()
@@ -209,8 +234,8 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         tier = classify_tier(row)
         entry_date = row["date"]
         close = row["close"]
-        otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
-        otm = int(otm_frac * 100)  # 10 或 15
+        otm_frac = otm.get(tier, 0.10)
+        otm_pct = int(otm_frac * 100)
         strike = round(close * (1 - otm_frac), 2)
 
         # 决策规则详情，供前端悬浮面板展示
@@ -276,7 +301,7 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
             "close": close,
             "tier": tier,
             "rules": rules,
-            "otm": otm,
+            "otm": otm_pct,
             "strike": strike,
             "expiry_date": str(expiry_date),
             "expiry_close": expiry_close,
@@ -315,24 +340,16 @@ def compute_summary(weeks: list[dict]) -> dict:
 
 
 def compute_tiers(weeks: list[dict],
-                   otm_a: float = DEFAULT_OTM_A, otm_b: float = DEFAULT_OTM_B,
-                   otm_c: float = DEFAULT_OTM_C) -> dict:
+                   otm: dict[str, float] | None = None) -> dict:
     """
     按层级统计，包含平稳到期比例。
     返回 {tier: {name, otm, count, settled, safe_count, safe_rate}}
     """
-    tier_names = {
-        "A": "企稳双撑",
-        "B1": "回调均线",
-        "B2": "低波整理",
-        "B3": "超跌支撑",
-        "B4": "趋势动能弱",
-        "C": "兜底深虚观望",
-    }
-    tier_otm = {"A": otm_a, "B1": otm_b, "B2": otm_b, "B3": otm_b, "B4": otm_b, "C": otm_c}
+    if otm is None:
+        otm = DEFAULT_OTM
 
     result = {}
-    for tier_key in ["A", "B1", "B2", "B3", "B4", "C"]:
+    for tier_key in ALL_TIERS:
         items = [w for w in weeks if w["tier"] == tier_key]
         if not items:
             continue
@@ -340,8 +357,8 @@ def compute_tiers(weeks: list[dict],
         safe_count = sum(1 for w in settled if w.get("safe_expiry") is True)
         safe_rate = round(safe_count / len(settled) * 100, 1) if settled else 0.0
         result[tier_key] = {
-            "name": tier_names[tier_key],
-            "otm": int(tier_otm[tier_key] * 100),
+            "name": TIER_NAMES[tier_key],
+            "otm": int(otm.get(tier_key, 0.10) * 100),
             "count": len(items),
             "settled": len(settled),
             "safe_count": safe_count,
@@ -351,8 +368,7 @@ def compute_tiers(weeks: list[dict],
 
 
 def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
-                    otm_a: float = DEFAULT_OTM_A, otm_b: float = DEFAULT_OTM_B,
-                    otm_c: float = DEFAULT_OTM_C) -> dict:
+                    otm: dict[str, float] | None = None) -> dict:
     """
     最近一周的完整决策详情，用于前端展示。
     weekly_rows: group_by_week 输出（正序）
@@ -360,30 +376,28 @@ def compute_latest(weekly_rows: list[dict], daily_df: pd.DataFrame,
     """
     if not weekly_rows:
         return {}
+    if otm is None:
+        otm = DEFAULT_OTM
 
     row = weekly_rows[-1]
     tier = classify_tier(row)
     close = row["close"]
     rules = _extract_rules(row)
 
-    # 始终计算三档行权价
-    strike_a = round(close * (1 - otm_a), 2)
-    strike_b = round(close * (1 - otm_b), 2)
-    strike_c = round(close * (1 - otm_c), 2)
+    # 各层行权价
+    strikes = {t: round(close * (1 - o), 2) for t, o in otm.items()}
 
     expiry_date = find_expiry_date(row["date"], weeks=EXPIRY_WEEKS)
 
-    otm_frac = otm_a if tier == "A" else (otm_c if tier == "C" else otm_b)
-    otm = int(otm_frac * 100)
+    otm_frac = otm.get(tier, 0.10)
+    otm_pct = int(otm_frac * 100)
 
     return {
         "date": str(row["date"]),
         "close": close,
         "tier": tier,
         "rules": rules,
-        "otm": otm,
-        "strike_a": strike_a,
-        "strike_b": strike_b,
-        "strike_c": strike_c,
+        "otm": otm_pct,
+        "strikes": strikes,
         "expiry_date": str(expiry_date),
     }
