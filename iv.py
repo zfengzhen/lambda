@@ -61,7 +61,7 @@ def bs_implied_vol(price: float, spot: float, strike: float,
         price:       期权市场价格
         spot:        标的现价
         strike:      行权价
-        tte:         剩余到期时间（年化，交易日/252）
+        tte:         剩余到期时间（年化，日历天/365）
         r:           无风险利率
         option_type: "P" 或 "C"
         max_iter:    最大迭代次数
@@ -174,7 +174,7 @@ def compute_ticker_iv(option_bars: list[dict], spot: float,
     for bar in selected:
         exp = bar["expiration"]
         dte = (_dt.date.fromisoformat(exp) - current).days
-        tte = dte / 252.0
+        tte = dte / 365.0
         iv = bs_implied_vol(bar["close"], spot, bar["strike"],
                             tte, RISK_FREE_RATE, bar["option_type"])
         if not math.isnan(iv) and _IV_MIN <= iv <= _IV_MAX:

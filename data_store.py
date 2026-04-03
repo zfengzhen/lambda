@@ -122,6 +122,7 @@ def backfill_option_bars_columns() -> int:
                     AS DATE),
                 option_type = substr(symbol, length(symbol) - 8, 1)
             WHERE strike IS NULL
+                AND symbol LIKE 'O:%' AND length(symbol) >= 17
         """)
         logger.info(f"[data_store] 存量回填完成：{null_count} 行")
         return null_count

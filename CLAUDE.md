@@ -30,6 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（按日期命名）
 │   ├── {TICKER}.json             # 策略数据（含 daily_bars，供 HTML 生成用）
 │   └── {TICKER}.html             # 可视化报告
+├── conftest.py          # pytest 全局配置：注册 online marker，默认跳过在线测试
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖
 ├── .venv/               # Python 虚拟环境（不提交）
@@ -90,6 +91,9 @@ python data_sync.py --tickers TQQQ QQQ   # 同步指定标的
 
 # 运行测试（由用户手动执行，AI 不主动运行）
 python -m pytest tests/ -v
+
+# IV 在线验证（调 Massive Snapshot API 对比 B-S 反算，需联网 + MASSIVE_API_KEY）
+python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 ```
 
 ## 环境变量
@@ -118,6 +122,7 @@ python -m pytest tests/ -v
 - **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。
 - **option_bars 新增结构化列**：`strike`/`expiration`/`option_type` 在入库时从 OCC symbol 解析填入。存量数据由 `init_db()` 自动回填。
 - **IV 计算依赖 scipy**：`iv.py` 使用 `scipy.stats.norm` 做 B-S 定价，需 `pip install scipy`。
+- **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法，与 VIX 方法论一致。
 
 ## 开发与提交规范
 
