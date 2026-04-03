@@ -11,8 +11,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .header{display:flex;align-items:center;gap:14px;margin-bottom:24px}
 .header h1{color:#e8ecf1;font-size:26px}
 .header .sub{color:#4fc3f7;font-size:16px;font-weight:600}
-.header .link{margin-left:auto;background:#253044;color:#8b95a5;border:1px solid #2a3548;border-radius:6px;padding:5px 14px;font-size:12px;text-decoration:none;cursor:pointer}
-.header .link:hover{background:#2a3548;color:#c8d0dc}
 
 /* 卡片 */
 .box{background:linear-gradient(135deg,#141b2d,#1a2332);border:1px solid #2a3548;border-radius:12px;padding:24px;margin-bottom:20px}
@@ -25,12 +23,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .flow .k{color:#c792ea;font-weight:bold}
 .flow .c{color:#82aaff}
 .flow .a{color:#c3e88d}
-.flow .s{color:#f07178}
-.flow .b1c{color:#ab47bc}
-.flow .b2c{color:#ff7043}
-.flow .b3c{color:#66bb6a}
-.flow .b4c{color:#ffa726}
-.flow .arrow{color:#546e7a}
 
 /* 层级卡片网格 */
 .tier-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -48,9 +40,22 @@ table.ind td{padding:10px 12px;border-bottom:1px solid #1a2332;vertical-align:to
 table.ind td:first-child{color:#4fc3f7;font-weight:600;white-space:nowrap;width:160px}
 table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12px;color:#c3e88d}
 
+/* OTM 表格 */
+table.otm{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+table.otm th{background:#1a2332;color:#8b95a5;padding:10px 14px;text-align:left;border-bottom:2px solid #2a3548;font-weight:600;font-size:12px}
+table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
+
 /* 备忘 */
 .memo{background:#141b2d;border-left:3px solid #ffc107;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:14px;font-size:13px;color:#a0aab8}
 .memo strong{color:#ffc107}
+
+/* 熔断规则 */
+.cb-box{background:#141b2d;border:1px solid #ef5350;border-radius:10px;padding:20px;margin-bottom:20px}
+.cb-box h3{color:#ef5350;font-size:17px;margin-bottom:14px}
+.cb-box .rule{padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px}
+.cb-rule-skip{background:#1a0a0a;border-left:3px solid #ef5350}
+.cb-rule-allow{background:#0a1a0a;border-left:3px solid #4caf50}
+.cb-box .core{margin-top:12px;padding:10px 14px;background:#0d1421;border-radius:6px;font-size:13px;color:#ffc107;font-weight:600}
 
 /* 分隔标题 */
 .sec-title{color:#e8ecf1;font-size:18px;margin:28px 0 14px;padding-bottom:6px;border-bottom:1px solid #253044}
@@ -71,7 +76,6 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
 }
 @media(max-width:600px){
   .header{flex-wrap:wrap}
-  .header .link{margin-left:0}
 }
 /* KaTeX 公式块 */
 .katex-block{background:#0d1421;border:1px solid #253044;border-radius:6px;padding:14px 20px;margin:10px 0;text-align:center;overflow-x:auto}
@@ -100,136 +104,65 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
     <p>整套逻辑只用<strong>日 K 线数据</strong>驱动，不依赖主观判断。</p>
   </div>
 
-  <!-- 决策树流程图 -->
+  <!-- 决策树代码块 -->
   <div class="box">
-    <h3>决策流程图</h3>
-    <div style="overflow-x:auto;text-align:center;padding:10px 0">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 720" style="max-width:920px;width:100%;height:auto">
-        <defs>
-          <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#546e7a"/></marker>
-          <marker id="ah-grn" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#4caf50"/></marker>
-          <marker id="ah-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#ef5350"/></marker>
-          <filter id="glow"><feGaussianBlur stdDeviation="2" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        </defs>
-
-        <!-- 背景 -->
-        <rect width="920" height="720" rx="12" fill="#0a0e17"/>
-
-        <!-- ===== 入口 ===== -->
-        <rect x="340" y="16" width="240" height="40" rx="20" fill="#1a2332" stroke="#4fc3f7" stroke-width="1.5"/>
-        <text x="460" y="42" text-anchor="middle" fill="#4fc3f7" font-size="14" font-weight="bold" font-family="-apple-system,sans-serif">日 K 线数据输入</text>
-
-        <!-- 线: 入口 → 判断1 -->
-        <line x1="460" y1="56" x2="460" y2="80" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-
-        <!-- ===== 判断1: MACD收窄 & 双撑 ===== -->
-        <polygon points="460,82 670,130 460,178 250,130" fill="#141b2d" stroke="#4fc3f7" stroke-width="1.2"/>
-        <text x="460" y="124" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">MACD收窄</text>
-        <text x="460" y="140" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">Close &gt; P5_PP &amp; P30_PP</text>
-
-        <!-- Y → A -->
-        <line x1="670" y1="130" x2="750" y2="130" stroke="#4caf50" stroke-width="1.5" marker-end="url(#ah-grn)"/>
-        <text x="700" y="122" text-anchor="middle" fill="#4caf50" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">Y</text>
-        <rect x="758" y="108" width="150" height="44" rx="8" fill="#0d1f2b" stroke="#4fc3f7" stroke-width="1.5" filter="url(#glow)"/>
-        <text x="833" y="127" text-anchor="middle" fill="#4fc3f7" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">A 企稳双撑</text>
-        <text x="833" y="144" text-anchor="middle" fill="#c3e88d" font-size="11" font-family="-apple-system,sans-serif">10% OTM</text>
-
-        <!-- N ↓ -->
-        <line x1="460" y1="178" x2="460" y2="208" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-        <text x="470" y="196" fill="#ef5350" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">N</text>
-
-        <!-- ===== 判断2: B1 回调均线 ===== -->
-        <polygon points="460,210 650,252 460,294 270,252" fill="#141b2d" stroke="#ab47bc" stroke-width="1.2"/>
-        <text x="460" y="248" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">Close &lt; MA20</text>
-        <text x="460" y="264" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">Close &gt; MA60</text>
-
-        <!-- Y → B1 -->
-        <line x1="650" y1="252" x2="750" y2="252" stroke="#4caf50" stroke-width="1.5" marker-end="url(#ah-grn)"/>
-        <text x="690" y="244" text-anchor="middle" fill="#4caf50" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">Y</text>
-        <rect x="758" y="232" width="150" height="44" rx="8" fill="#1a0d2b" stroke="#ab47bc" stroke-width="1.5"/>
-        <text x="833" y="251" text-anchor="middle" fill="#ab47bc" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">B1 回调均线</text>
-        <text x="833" y="268" text-anchor="middle" fill="#c3e88d" font-size="11" font-family="-apple-system,sans-serif">15% OTM</text>
-
-        <!-- N ↓ -->
-        <line x1="460" y1="294" x2="460" y2="324" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-        <text x="470" y="312" fill="#ef5350" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">N</text>
-
-        <!-- ===== 判断3: B2 低波整理 ===== -->
-        <polygon points="460,326 650,368 460,410 270,368" fill="#141b2d" stroke="#ff7043" stroke-width="1.2"/>
-        <text x="460" y="364" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">波动率 &lt; 50%</text>
-        <text x="460" y="380" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">|MA20距| ≤ 5%</text>
-
-        <!-- Y → B2 -->
-        <line x1="650" y1="368" x2="750" y2="368" stroke="#4caf50" stroke-width="1.5" marker-end="url(#ah-grn)"/>
-        <text x="690" y="360" text-anchor="middle" fill="#4caf50" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">Y</text>
-        <rect x="758" y="348" width="150" height="44" rx="8" fill="#2b1a0d" stroke="#ff7043" stroke-width="1.5"/>
-        <text x="833" y="367" text-anchor="middle" fill="#ff7043" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">B2 低波整理</text>
-        <text x="833" y="384" text-anchor="middle" fill="#c3e88d" font-size="11" font-family="-apple-system,sans-serif">15% OTM</text>
-
-        <!-- N ↓ -->
-        <line x1="460" y1="410" x2="460" y2="440" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-        <text x="470" y="428" fill="#ef5350" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">N</text>
-
-        <!-- ===== 判断4: B3 超跌支撑 ===== -->
-        <polygon points="460,442 650,484 460,526 270,484" fill="#141b2d" stroke="#66bb6a" stroke-width="1.2"/>
-        <text x="460" y="480" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">DIF &lt; 0</text>
-        <text x="460" y="496" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">Close &gt; P30_PP</text>
-
-        <!-- Y → B3 -->
-        <line x1="650" y1="484" x2="750" y2="484" stroke="#4caf50" stroke-width="1.5" marker-end="url(#ah-grn)"/>
-        <text x="690" y="476" text-anchor="middle" fill="#4caf50" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">Y</text>
-        <rect x="758" y="464" width="150" height="44" rx="8" fill="#0d2b1a" stroke="#66bb6a" stroke-width="1.5"/>
-        <text x="833" y="483" text-anchor="middle" fill="#66bb6a" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">B3 超跌支撑</text>
-        <text x="833" y="500" text-anchor="middle" fill="#c3e88d" font-size="11" font-family="-apple-system,sans-serif">15% OTM</text>
-
-        <!-- N ↓ -->
-        <line x1="460" y1="526" x2="460" y2="556" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-        <text x="470" y="544" fill="#ef5350" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">N</text>
-
-        <!-- ===== 判断5: B4 趋势动能弱 ===== -->
-        <polygon points="460,558 650,600 460,642 270,600" fill="#141b2d" stroke="#ffa726" stroke-width="1.2"/>
-        <text x="460" y="596" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">MA20 &gt; MA60</text>
-        <text x="460" y="612" text-anchor="middle" fill="#82aaff" font-size="11" font-family="monospace">DIF &lt; 0</text>
-
-        <!-- Y → B4 -->
-        <line x1="650" y1="600" x2="750" y2="600" stroke="#4caf50" stroke-width="1.5" marker-end="url(#ah-grn)"/>
-        <text x="690" y="592" text-anchor="middle" fill="#4caf50" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">Y</text>
-        <rect x="758" y="580" width="150" height="44" rx="8" fill="#2b200d" stroke="#ffa726" stroke-width="1.5"/>
-        <text x="833" y="599" text-anchor="middle" fill="#ffa726" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">B4 趋势动能弱</text>
-        <text x="833" y="616" text-anchor="middle" fill="#c3e88d" font-size="11" font-family="-apple-system,sans-serif">15% OTM</text>
-
-        <!-- N ↓ → C -->
-        <line x1="460" y1="642" x2="460" y2="672" stroke="#546e7a" stroke-width="1.5" marker-end="url(#ah)"/>
-        <text x="470" y="660" fill="#ef5350" font-size="11" font-weight="bold" font-family="-apple-system,sans-serif">N</text>
-
-        <!-- ===== C 兜底 ===== -->
-        <rect x="360" y="674" width="200" height="40" rx="8" fill="#1a2028" stroke="#78909c" stroke-width="1.5"/>
-        <text x="460" y="691" text-anchor="middle" fill="#78909c" font-size="12" font-weight="bold" font-family="-apple-system,sans-serif">C 兜底深虚观望</text>
-        <text x="460" y="708" text-anchor="middle" fill="#f07178" font-size="11" font-family="-apple-system,sans-serif">25% OTM</text>
-
-        <!-- ===== 左侧 OTM 梯度标注 ===== -->
-        <text x="18" y="135" fill="#546e7a" font-size="10" font-family="-apple-system,sans-serif">激进</text>
-        <text x="18" y="695" fill="#546e7a" font-size="10" font-family="-apple-system,sans-serif">保守</text>
-        <line x1="30" y1="148" x2="30" y2="672" stroke="#253044" stroke-width="1" stroke-dasharray="4,4"/>
-        <polygon points="30,148 26,158 34,158" fill="#253044"/>
-        <polygon points="30,672 26,662 34,662" fill="#253044"/>
-
-        <!-- OTM 深度刻度 -->
-        <line x1="24" y1="130" x2="36" y2="130" stroke="#4fc3f7" stroke-width="2"/>
-        <text x="48" y="134" fill="#4fc3f7" font-size="9" font-family="-apple-system,sans-serif">10%</text>
-        <line x1="24" y1="368" x2="36" y2="368" stroke="#ff7043" stroke-width="2"/>
-        <text x="48" y="372" fill="#ff7043" font-size="9" font-family="-apple-system,sans-serif">15%</text>
-        <line x1="24" y1="694" x2="36" y2="694" stroke="#78909c" stroke-width="2"/>
-        <text x="48" y="698" fill="#78909c" font-size="9" font-family="-apple-system,sans-serif">25%</text>
-
-        <!-- 图例 -->
-        <rect x="80" y="16" width="160" height="44" rx="6" fill="#141b2d" stroke="#253044" stroke-width="1"/>
-        <text x="96" y="34" fill="#546e7a" font-size="10" font-family="-apple-system,sans-serif">图例</text>
-        <polygon points="96,44 110,40 110,48" fill="#4caf50"/><text x="116" y="48" fill="#4caf50" font-size="10" font-family="-apple-system,sans-serif">Y = 命中</text>
-        <polygon points="168,44 182,40 182,48" fill="#ef5350"/><text x="188" y="48" fill="#ef5350" font-size="10" font-family="-apple-system,sans-serif">N = 继续</text>
-      </svg>
+    <h3>决策树</h3>
+    <div class="flow">
+      <span class="k">IF</span> <span class="c">MACD收窄 AND Close &gt; P5_PP AND Close &gt; P30_PP</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ A  企稳双撑 — 卖 8% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">Close &lt; MA20 AND Close &gt; MA60</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B1 回调均线 — 卖 8% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">波动率 &lt; 50% AND |MA20距| ≤ 4.5%</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B2 低波整理 — 卖 15% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">DIF &lt; 0 AND Close &gt; P30_PP</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B3 超跌支撑 — 卖 8% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">MA20 &gt; MA60 AND DIF &lt; 0</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B4 趋势动能弱 — 卖 10% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| ≤ 10%</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C1 趋势延续 — 卖 15% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| &gt; 10%</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C2 过热追涨 — 卖 15% OTM Put</span><br><br>
+      <span class="k">ELIF</span> <span class="c">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C3 跌势减速 — 卖 15% OTM Put</span><br><br>
+      <span class="k">ELSE</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C4 加速下杀 — 卖 15% OTM Put</span>
     </div>
-    <p style="text-align:center;font-size:13px;color:#546e7a;margin-top:4px">优先级自上而下，命中即停。</p>
+    <p style="text-align:center;font-size:13px;color:#546e7a;margin-top:10px">优先级自上而下，命中即停。</p>
+  </div>
+
+  <!-- OTM 分层 -->
+  <div class="box">
+    <h3>OTM 分层逻辑</h3>
+    <table class="otm">
+      <thead><tr><th>层级</th><th>OTM</th><th>逻辑</th></tr></thead>
+      <tbody>
+        <tr><td style="color:#4fc3f7;font-weight:bold">A 企稳双撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>信号最强，支撑最可靠</td></tr>
+        <tr><td style="color:#ab47bc;font-weight:bold">B1 回调均线</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>均线回踩，中期结构完好</td></tr>
+        <tr><td style="color:#ff7043;font-weight:bold">B2 低波整理</td><td style="color:#ffa726;font-weight:bold">15%</td><td>低波但方向不明，偏保守</td></tr>
+        <tr><td style="color:#66bb6a;font-weight:bold">B3 超跌支撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>有 Pivot 支撑兜底</td></tr>
+        <tr><td style="color:#ffa726;font-weight:bold">B4 趋势动能弱</td><td style="color:#ffa726;font-weight:bold">10%</td><td>趋势尚存但动能衰减，适度保守</td></tr>
+        <tr><td style="color:#90a4ae;font-weight:bold">C1 趋势延续</td><td style="color:#f07178;font-weight:bold">15%</td><td>趋势运行中但缺少强支撑</td></tr>
+        <tr><td style="color:#ef5350;font-weight:bold">C2 过热追涨</td><td style="color:#f07178;font-weight:bold">15%</td><td>短期超买，回调风险增大</td></tr>
+        <tr><td style="color:#26c6da;font-weight:bold">C3 跌势减速</td><td style="color:#f07178;font-weight:bold">15%</td><td>空头衰减，底部可能形成</td></tr>
+        <tr><td style="color:#e53935;font-weight:bold">C4 加速下杀</td><td style="color:#f07178;font-weight:bold">15%</td><td>最危险状态，下行动能增强</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 熔断规则 -->
+  <div class="cb-box">
+    <h3>⚠ 连续弱势熔断规则</h3>
+    <p style="font-size:13px;color:#a0aab8;margin-bottom:14px">前 2 周连续 C 类 + 本周也是 C 类时触发判断（本周是 A/B 类始终放行）：</p>
+    <div class="rule cb-rule-skip">
+      <strong style="color:#ef5350">暂停</strong> — 本周 C 类但非 C3：趋势没有减速迹象（C1 还在涨但不稳、C2 过热、C4 加速下杀），风险未收敛
+    </div>
+    <div class="rule cb-rule-allow">
+      <strong style="color:#4caf50">继续卖出</strong> — 本周 C3 + 前 2 周有 C3：跌势已连续收窄（MACD 收窄出现过至少 2 次），空头力量持续衰减，底部信号较可靠
+    </div>
+    <div class="rule cb-rule-skip">
+      <strong style="color:#ef5350">暂停</strong> — 本周 C3 + 前 2 周无 C3：之前都是纯弱势，本周才首次出现减速，可能只是下跌中继的短暂喘息而非真正见底
+    </div>
+    <div class="core">核心思路：单次 C3 减速不可信，连续减速才可信；A/B 类已有支撑条件，不受熔断影响。</div>
   </div>
 
   <!-- 各层级解读 -->
@@ -240,19 +173,19 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
       <div class="name"><span class="dot" style="background:#4fc3f7"></span><span style="color:#4fc3f7">A · 企稳双撑</span></div>
       <div class="cond">MACD收窄 AND Close &gt; P5_PP AND Close &gt; P30_PP</div>
       <div class="meaning">下跌动能正在衰减，短期和中期支撑均在脚下。决策树中信号最强的一档。</div>
-      <div class="action" style="color:#4caf50">→ 卖 10% OTM Put — 行权价最近，权利金最厚</div>
+      <div class="action" style="color:#4caf50">→ 卖 8% OTM Put — 行权价最近，权利金最厚</div>
     </div>
 
     <div class="tier" style="background:#1a0d2b;border-color:#2d1a40">
       <div class="name"><span class="dot" style="background:#ab47bc"></span><span style="color:#ab47bc">B1 · 回调均线</span></div>
       <div class="cond">Close &lt; MA20 AND Close &gt; MA60</div>
       <div class="meaning">中期多头趋势未被破坏，短期出现回调。趋势行情中常见的"均线回踩"形态。</div>
-      <div class="action" style="color:#ab47bc">→ 卖 15% OTM Put — 比 A 层多留 5% 缓冲</div>
+      <div class="action" style="color:#ab47bc">→ 卖 8% OTM Put</div>
     </div>
 
     <div class="tier" style="background:#2b1a0d;border-color:#402d1a">
       <div class="name"><span class="dot" style="background:#ff7043"></span><span style="color:#ff7043">B2 · 低波整理</span></div>
-      <div class="cond">波动率 &lt; 50% AND |MA20距| ≤ 5%</div>
+      <div class="cond">波动率 &lt; 50% AND |MA20距| ≤ 4.5%</div>
       <div class="meaning">市场窄幅震荡，方向不明但波动温和。Theta 衰减对卖方有利，大幅下行概率偏低。</div>
       <div class="action" style="color:#ff7043">→ 卖 15% OTM Put — 低波环境用深虚值换安全</div>
     </div>
@@ -261,21 +194,42 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
       <div class="name"><span class="dot" style="background:#66bb6a"></span><span style="color:#66bb6a">B3 · 超跌支撑</span></div>
       <div class="cond">DIF &lt; 0 AND Close &gt; P30_PP</div>
       <div class="meaning">中期动能偏空，但 30 日枢轴点提供结构性支撑。弱势中找支撑的逻辑。</div>
-      <div class="action" style="color:#66bb6a">→ 卖 15% OTM Put</div>
+      <div class="action" style="color:#66bb6a">→ 卖 8% OTM Put</div>
     </div>
 
     <div class="tier" style="background:#2b200d;border-color:#40331a">
       <div class="name"><span class="dot" style="background:#ffa726"></span><span style="color:#ffa726">B4 · 趋势动能弱</span></div>
       <div class="cond">MA20 &gt; MA60 AND DIF &lt; 0</div>
       <div class="meaning">趋势的骨架还在，但肌肉已松。均线多头排列是滞后指标，DIF 转负是领先信号——趋势可能正在转向。</div>
-      <div class="action" style="color:#ffa726">→ 卖 15% OTM Put</div>
+      <div class="action" style="color:#ffa726">→ 卖 10% OTM Put</div>
     </div>
 
-    <div class="tier" style="background:#1a2028;border-color:#2a3040">
-      <div class="name"><span class="dot" style="background:#78909c"></span><span style="color:#78909c">C · 兜底深虚观望</span></div>
-      <div class="cond">以上全部不满足</div>
-      <div class="meaning">市场状态不明或多项指标偏空，没有可靠支撑信号。行权价仅为现价 75%，除非崩盘级下跌否则几乎不会被行权。</div>
-      <div class="action" style="color:#78909c">→ 卖 25% OTM Put — 权利金极薄，胜率极高，保持策略运转</div>
+    <div class="tier" style="background:#151c28;border-color:#253040">
+      <div class="name"><span class="dot" style="background:#90a4ae"></span><span style="color:#90a4ae">C1 · 趋势延续</span></div>
+      <div class="cond">Close ≥ MA20 AND |MA20偏离| ≤ 10%</div>
+      <div class="meaning">价格在 MA20 上方且偏离合理，趋势仍在运行中，但缺少更强的支撑信号。</div>
+      <div class="action" style="color:#90a4ae">→ 卖 15% OTM Put</div>
+    </div>
+
+    <div class="tier" style="background:#1a1015;border-color:#302028">
+      <div class="name"><span class="dot" style="background:#ef5350"></span><span style="color:#ef5350">C2 · 过热追涨</span></div>
+      <div class="cond">Close ≥ MA20 AND |MA20偏离| &gt; 10%</div>
+      <div class="meaning">价格远超 MA20，短期超买，回调风险增大。</div>
+      <div class="action" style="color:#ef5350">→ 卖 15% OTM Put</div>
+    </div>
+
+    <div class="tier" style="background:#0d1a1f;border-color:#1a2d33">
+      <div class="name"><span class="dot" style="background:#26c6da"></span><span style="color:#26c6da">C3 · 跌势减速</span></div>
+      <div class="cond">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</div>
+      <div class="meaning">价格跌破中期均线，但 MACD 柱在缩小，空头力量正在衰减。底部可能正在形成。</div>
+      <div class="action" style="color:#26c6da">→ 卖 15% OTM Put</div>
+    </div>
+
+    <div class="tier" style="background:#1a0a0a;border-color:#301515">
+      <div class="name"><span class="dot" style="background:#e53935"></span><span style="color:#e53935">C4 · 加速下杀</span></div>
+      <div class="cond">Close &lt; MA60 AND |MACD今| ≥ |MACD昨|</div>
+      <div class="meaning">价格跌破中期均线且下行动能还在增强，是最危险的市场状态。</div>
+      <div class="action" style="color:#e53935">→ 卖 15% OTM Put</div>
     </div>
 
   </div>
@@ -325,15 +279,20 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
   <div class="box">
     <h3>|MA20距|（乖离率）</h3>
     <div class="katex-block">$$\text{BIAS}_{20} = \frac{\text{Close} - \text{MA}_{20}}{\text{MA}_{20}} \times 100\%$$</div>
-    <p>$|\text{BIAS}_{20}| \le 5\%$，表示价格在均线附近窄幅波动，处于贴线整理状态。</p>
+    <p>$|\text{BIAS}_{20}| \le 4.5\%$，表示价格在均线附近窄幅波动，处于贴线整理状态。</p>
   </div>
 
   <!-- 设计备忘 -->
   <h2 class="sec-title">设计备忘</h2>
 
   <div class="memo">
-    <strong>关于 B 层的统一虚值</strong><br>
-    B1–B4 四个分支的 OTM 深度均为 15%，区别仅在触发条件。如果需要更精细的风险梯度，可以在 B 层内部做进一步分级，例如 B1 用 12%、B3 用 18%。
+    <strong>关于 OTM 分层</strong><br>
+    A/B1/B3 用 8%（信号较强，支撑可靠），B4 用 10%（趋势在但动能弱），B2 和 C 类用 15%（偏保守）。参数根据标的杠杆倍数自动缩放。
+  </div>
+
+  <div class="memo">
+    <strong>关于熔断规则</strong><br>
+    基于 TQQQ 回测验证，熔断规则精准命中了 2025 年 2–3 月连续暴跌期的 10 个不安全周（仅 1 个误杀），将执行周平稳到期率从 85.6% 提升至 96.2%。
   </div>
 
   <div class="memo">
@@ -343,7 +302,7 @@ table.ind code{background:#0d1421;padding:2px 6px;border-radius:3px;font-size:12
 
   <div class="memo">
     <strong>关于阈值校准</strong><br>
-    50% 波动率、5% 乖离率、10%/15%/25% OTM 深度——这些参数都是起点而非终点，应根据标的特性和回测结果持续调整。
+    50% 波动率、4.5% 乖离率、8%/10%/15% OTM 深度——这些参数都是起点而非终点，应根据标的特性和回测结果持续调整。
   </div>
 
   <!-- slogan -->

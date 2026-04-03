@@ -16,10 +16,11 @@ import pandas as pd
 
 # ---- 策略常量 ----
 # 基准 OTM（3 倍杠杆标的的默认值）
+# A/B1/B3/B4 为 8%，B2/C1-C4 为 15%
 DEFAULT_OTM = {
-    "A": 0.10,
-    "B1": 0.10, "B2": 0.10, "B3": 0.10, "B4": 0.10,
-    "C1": 0.10, "C2": 0.10, "C3": 0.10, "C4": 0.10,
+    "A": 0.08,
+    "B1": 0.08, "B2": 0.15, "B3": 0.08, "B4": 0.10,
+    "C1": 0.15, "C2": 0.15, "C3": 0.15, "C4": 0.15,
 }
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
@@ -116,7 +117,7 @@ def classify_tier(row: dict) -> str:
     层级：
       A  企稳双撑    |MACD_today| < |MACD_yesterday| AND Close > P5_PP AND Close > P30_PP
       B1 回调均线    Close < MA20 AND Close > MA60
-      B2 低波整理    hist_vol < 50 AND |MA20距离| <= 5%
+      B2 低波整理    hist_vol < 50 AND |MA20距离| <= 4.5%
       B3 超跌支撑    DIF < 0 AND Close > P30_PP
       B4 趋势动能弱  MA20 > MA60 AND DIF < 0
       C1 趋势延续    Close >= MA20 AND |MA20偏离| <= 10%
@@ -144,7 +145,7 @@ def classify_tier(row: dict) -> str:
 
     # B2 低波整理
     ma20_dist = abs((close - ma20) / ma20 * 100)
-    if hist_vol < 50 and ma20_dist <= 5:
+    if hist_vol < 50 and ma20_dist <= 4.5:
         return "B2"
 
     # B3 超跌支撑
@@ -247,9 +248,6 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
         # 查到期日收盘价
         pending = False
         expiry_close = None
-        pct_change = None
-        period_low = None
-        low_vs_strike = None
         settle_diff = None
         safe_expiry = None
 
@@ -268,15 +266,6 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
                 expiry_close = float(expiry_row.iloc[0]["close"])
 
         if not pending and expiry_close is not None:
-            # 涨跌幅
-            pct_change = round((expiry_close - close) / close * 100, 4)
-
-            # 区间最低价：(entry_date, expiry_date] 范围内 daily close 最小值
-            period_rows = daily[(daily["date"] > entry_date) & (daily["date"] <= expiry_date)]
-            if not period_rows.empty:
-                period_low = float(period_rows["close"].min())
-                low_vs_strike = round((period_low - strike) / strike * 100, 4)
-
             # 结算差比：(到期价 - 行权价) / 行权价 × 100%
             settle_diff = round((expiry_close - strike) / strike * 100, 2)
             # 平稳到期：结算差比 > 0（到期价高于行权价，未被行权）
@@ -305,9 +294,6 @@ def backtest_weeks(weekly_rows: list[dict], daily_df: pd.DataFrame,
             "strike": strike,
             "expiry_date": str(expiry_date),
             "expiry_close": expiry_close,
-            "pct_change": pct_change,
-            "period_low": period_low,
-            "low_vs_strike": low_vs_strike,
             "settle_diff": settle_diff,
             "safe_expiry": safe_expiry,
             "recovery_days": recovery_days,
