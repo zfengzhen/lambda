@@ -112,3 +112,88 @@ class TestBsImpliedVol:
         price = _bs_price_test(spot, strike, tte, r, sigma, "P")
         iv = bs_implied_vol(price, spot, strike, tte, r, "P")
         assert abs(iv - sigma) < 0.001
+
+
+import datetime
+from iv import select_contracts
+
+
+def _make_option_row(ticker, expiry, opt_type, strike, close, date):
+    """构造一条 option_bars 风格的 dict（含已解析的结构化字段）。"""
+    yy = expiry[2:4]
+    mm = expiry[5:7]
+    dd = expiry[8:10]
+    strike_int = int(round(strike * 1000))
+    symbol = f"O:{ticker}{yy}{mm}{dd}{opt_type}{strike_int:08d}"
+    return {
+        "date": date,
+        "symbol": symbol,
+        "open": close,
+        "high": close,
+        "low": close,
+        "close": close,
+        "volume": 100,
+        "transactions": 10,
+        "strike": strike,
+        "expiration": expiry,
+        "option_type": opt_type,
+    }
+
+
+class TestSelectContracts:
+    def setup_method(self):
+        """构造测试数据：spot=50, date=2026-04-03"""
+        self.date = "2026-04-03"
+        self.spot = 50.0
+        expiry_near = "2026-04-17"   # 14天后 — 近月
+        expiry_far = "2026-05-15"    # 42天后 — 远月
+        expiry_too_close = "2026-04-08"  # 5天后 — 应被排除
+
+        self.bars = []
+        for s in range(45, 56):
+            self.bars.append(_make_option_row("TEST", expiry_near, "P", float(s), 2.0, self.date))
+            self.bars.append(_make_option_row("TEST", expiry_near, "C", float(s), 2.0, self.date))
+        for s in range(45, 56):
+            self.bars.append(_make_option_row("TEST", expiry_far, "P", float(s), 3.0, self.date))
+            self.bars.append(_make_option_row("TEST", expiry_far, "C", float(s), 3.0, self.date))
+        for s in range(48, 53):
+            self.bars.append(_make_option_row("TEST", expiry_too_close, "P", float(s), 1.0, self.date))
+
+    def test_returns_two_expiries(self):
+        selected = select_contracts(self.bars, self.spot, self.date)
+        expiries = {c["expiration"] for c in selected}
+        assert len(expiries) == 2
+        assert "2026-04-08" not in expiries
+
+    def test_excludes_too_close_expiry(self):
+        selected = select_contracts(self.bars, self.spot, self.date)
+        for c in selected:
+            dte = (datetime.date.fromisoformat(c["expiration"])
+                   - datetime.date.fromisoformat(self.date)).days
+            assert dte > 7
+
+    def test_selects_atm_strikes(self):
+        selected = select_contracts(self.bars, self.spot, self.date)
+        for c in selected:
+            assert abs(c["strike"] - self.spot) <= 5
+
+    def test_includes_puts_and_calls(self):
+        selected = select_contracts(self.bars, self.spot, self.date)
+        types = {c["option_type"] for c in selected}
+        assert types == {"P", "C"}
+
+    def test_total_count_reasonable(self):
+        """2 expiries × 2 types × 4 strikes = 16"""
+        selected = select_contracts(self.bars, self.spot, self.date)
+        assert 8 <= len(selected) <= 24
+
+    def test_single_expiry_fallback(self):
+        bars_single = [b for b in self.bars if b["expiration"] == "2026-04-17"]
+        selected = select_contracts(bars_single, self.spot, self.date)
+        assert len(selected) > 0
+        expiries = {c["expiration"] for c in selected}
+        assert expiries == {"2026-04-17"}
+
+    def test_empty_bars_returns_empty(self):
+        selected = select_contracts([], self.spot, self.date)
+        assert selected == []

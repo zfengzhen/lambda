@@ -4,6 +4,7 @@
 """
 import re
 import math
+import datetime as _dt
 from scipy.stats import norm
 
 RISK_FREE_RATE = 0.05
@@ -84,3 +85,53 @@ def bs_implied_vol(price: float, spot: float, strike: float,
             lo = mid
     # 未收敛
     return float("nan")
+
+
+# ATM 附近每侧取几档（Put + Call 各 N_STRIKES 档）
+N_STRIKES = 4
+# 排除到期日距当前日 ≤ MIN_DTE 天的合约
+MIN_DTE = 7
+
+
+def select_contracts(option_bars: list[dict], spot: float,
+                     date: str) -> list[dict]:
+    """筛选 ATM 附近、最近两个到期日的合约。
+
+    Args:
+        option_bars: option_bars 记录列表，需含 strike/expiration/option_type 字段
+        spot:        标的当日收盘价
+        date:        当前日期 "YYYY-MM-DD"
+
+    Returns:
+        筛选后的 option_bars 子集
+    """
+    if not option_bars:
+        return []
+
+    current = _dt.date.fromisoformat(date)
+
+    # 按到期日分组，排除 ≤ MIN_DTE 天的
+    by_expiry: dict[str, list[dict]] = {}
+    for bar in option_bars:
+        exp = bar["expiration"]
+        dte = (_dt.date.fromisoformat(exp) - current).days
+        if dte > MIN_DTE:
+            by_expiry.setdefault(exp, []).append(bar)
+
+    if not by_expiry:
+        return []
+
+    # 取最近的两个到期日
+    sorted_expiries = sorted(by_expiry.keys())[:2]
+
+    selected = []
+    for exp in sorted_expiries:
+        bars = by_expiry[exp]
+        # 分 Put / Call
+        for opt_type in ("P", "C"):
+            typed = [b for b in bars if b["option_type"] == opt_type]
+            # 按 strike 与 spot 距离排序，取最近 N_STRIKES 档
+            typed.sort(key=lambda b: abs(b["strike"] - spot))
+            selected.extend(typed[:N_STRIKES])
+
+    return selected
