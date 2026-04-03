@@ -475,3 +475,113 @@ def test_insert_option_bars_after_split_date(tmp_db, tmp_path):
     assert row[0] == "O:TQQQ260131P00019250"
     assert abs(row[1] - 2.00) < 0.01
     assert row[3] == 100
+
+
+# ── ticker_iv 表 CRUD ────────────────────────────────────────
+
+def test_init_creates_ticker_iv_table(tmp_db):
+    con = duckdb.connect(str(tmp_db))
+    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    assert "ticker_iv" in tables
+    con.close()
+
+
+def test_option_bars_has_new_columns(tmp_db):
+    """option_bars 表应含 strike, expiration, option_type 列"""
+    con = duckdb.connect(str(tmp_db))
+    cols = {r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'option_bars'"
+    ).fetchall()}
+    con.close()
+    assert "strike" in cols
+    assert "expiration" in cols
+    assert "option_type" in cols
+
+
+def test_upsert_ticker_iv(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.65},
+            {"date": "2026-04-02", "ticker": "TQQQ", "iv": 0.70},
+        ])
+    con = duckdb.connect(str(tmp_db))
+    rows = con.execute(
+        "SELECT date, iv FROM ticker_iv WHERE ticker='TQQQ' ORDER BY date"
+    ).fetchall()
+    con.close()
+    assert len(rows) == 2
+    assert abs(rows[0][1] - 0.65) < 1e-9
+    assert abs(rows[1][1] - 0.70) < 1e-9
+
+
+def test_upsert_ticker_iv_overwrites(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.65},
+        ])
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.80},
+        ])
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute("SELECT iv FROM ticker_iv WHERE ticker='TQQQ'").fetchone()
+    con.close()
+    assert abs(row[0] - 0.80) < 1e-9
+
+
+def test_query_ticker_iv(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.65},
+            {"date": "2026-04-02", "ticker": "TQQQ", "iv": 0.70},
+            {"date": "2026-04-01", "ticker": "QQQ", "iv": 0.20},
+        ])
+        rows = data_store.query_ticker_iv("TQQQ", "2026-04-01", "2026-04-02")
+    assert len(rows) == 2
+    assert rows[0]["ticker"] == "TQQQ"
+    assert rows[0]["date"] == "2026-04-01"
+
+
+def test_get_latest_iv_date(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        assert data_store.get_latest_iv_date("TQQQ") is None
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.65},
+            {"date": "2026-04-03", "ticker": "TQQQ", "iv": 0.70},
+        ])
+        assert data_store.get_latest_iv_date("TQQQ") == "2026-04-03"
+
+
+def test_delete_ticker_iv(tmp_db):
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_ticker_iv([
+            {"date": "2026-04-01", "ticker": "TQQQ", "iv": 0.65},
+            {"date": "2026-04-01", "ticker": "QQQ", "iv": 0.20},
+        ])
+        data_store.delete_ticker_iv("TQQQ")
+        assert data_store.get_latest_iv_date("TQQQ") is None
+        assert data_store.get_latest_iv_date("QQQ") == "2026-04-01"
+
+
+def test_delete_ticker_data_clears_ticker_iv(tmp_db, tmp_path):
+    """delete_ticker_data 应同步清空 ticker_iv"""
+    opt_rows = [
+        {"ticker": "O:TQQQ250131P00038500", "volume": "10", "open": "0.85",
+         "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "3"},
+    ]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(opt_rows))
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_equity_bars([
+            {"date": "2025-01-06", "ticker": "TQQQ", "open": 42.0,
+             "high": 43.0, "low": 41.0, "close": 42.5,
+             "volume": 1000000, "vwap": 42.3, "transactions": 5000},
+        ])
+        data_store.insert_option_bars_from_csv(f, "2025-01-06")
+        data_store.upsert_ticker_iv([
+            {"date": "2025-01-06", "ticker": "TQQQ", "iv": 0.65},
+        ])
+        data_store.delete_ticker_data("TQQQ")
+        assert data_store.get_latest_iv_date("TQQQ") is None
