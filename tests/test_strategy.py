@@ -21,10 +21,10 @@ from strategy import (
     compute_tiers,
     compute_latest,
     get_otm_for_ticker,
-    DEFAULT_OTM_A,
-    DEFAULT_OTM_B,
-    DEFAULT_OTM_C,
+    DEFAULT_OTM,
     LEVERAGE_MAP,
+    ALL_TIERS,
+    TIER_NAMES,
 )
 
 
@@ -116,13 +116,47 @@ class TestClassifyTier:
                              hist_vol=70)      # close < ma60 → 排除 B1
         assert classify_tier(row) == "B4"
 
-    def test_tier_c(self):
-        """C skip: 不满足任何条件"""
+    def test_tier_c1(self):
+        """C1 趋势延续: Close >= MA20, |MA20偏离| <= 10%, 不满足 A/B"""
+        row = self._base_row(close=105, ma20=100, ma60=90,
+                             macd=-10, prev_macd=-5,  # MACD 放大 → 非 A
+                             dif=1, hist_vol=60,       # DIF>0 → 非 B3/B4
+                             pivot_5_pp=120, pivot_30_pp=120)  # 非 A
+        assert classify_tier(row) == "C1"
+
+    def test_tier_c2(self):
+        """C2 过热追涨: Close >= MA20, |MA20偏离| > 10%"""
+        row = self._base_row(close=115, ma20=100, ma60=90,
+                             macd=-10, prev_macd=-5,
+                             dif=1, hist_vol=60,
+                             pivot_5_pp=120, pivot_30_pp=120)
+        assert classify_tier(row) == "C2"
+
+    def test_tier_c3(self):
+        """C3 跌势减速: Close < MA60, MACD 收窄, MA20 < MA60 (排除 B4)"""
+        row = self._base_row(close=70, ma20=75, ma60=80,
+                             macd=-3, prev_macd=-5,   # |3| < |5| → MACD 收窄
+                             dif=-2, hist_vol=80,
+                             pivot_5_pp=120, pivot_30_pp=120)
+        assert classify_tier(row) == "C3"
+
+    def test_tier_c4(self):
+        """C4 加速下杀: Close < MA60, MACD 放大"""
+        row = self._base_row(close=70, ma20=75, ma60=80,
+                             macd=-10, prev_macd=-5,  # |10| > |5| → MACD 放大
+                             dif=-2, hist_vol=80,
+                             pivot_5_pp=120, pivot_30_pp=120)
+        assert classify_tier(row) == "C4"
+
+    def test_tier_c_returns_subtype(self):
+        """原 C 兜底现在返回 C1-C4 子类"""
         row = self._base_row(close=100, dif=5, ma20=80, ma60=120,
                              macd=-10, prev_macd=-5,
                              pivot_5_pp=120, pivot_30_pp=120,
                              hist_vol=70)
-        assert classify_tier(row) == "C"
+        result = classify_tier(row)
+        assert result.startswith("C"), f"期望 C 子类，实际 {result}"
+        assert result in ("C1", "C2", "C3", "C4")
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +254,7 @@ class TestBacktestWeeks:
         result = backtest_weeks(weekly_rows, daily_df)
         for r in result:
             assert "tier" in r
-            assert r["tier"] in ("A", "B1", "B2", "B3", "B4", "C")
+            assert r["tier"] in ("A", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4")
 
     def test_backtest_new_fields(self, scenario):
         """回测结果包含 settle_diff / safe_expiry / pct_change / period_low / low_vs_strike"""
@@ -240,13 +274,11 @@ class TestBacktestWeeks:
             assert "pnl" not in r
 
     def test_backtest_otm_is_int(self, scenario):
-        """otm 字段为整数（10 或 15）或 None（C 层）"""
+        """otm 字段为整数"""
         weekly_rows, daily_df = scenario
         result = backtest_weeks(weekly_rows, daily_df)
         for r in result:
-            if r["tier"] != "C":
-                assert r["otm"] in (10, 15)
-                assert isinstance(r["otm"], int)
+            assert isinstance(r["otm"], int)
 
     def test_backtest_date_is_string(self, scenario):
         """date 和 expiry_date 为字符串"""
@@ -266,13 +298,13 @@ class TestComputeSummary:
 
     @staticmethod
     def _make_weeks():
-        """构造 5 条 week dict：A/B1/B2/C 各层均为正式策略分支"""
+        """构造 5 条 week dict：A/B1/B2/C1 各层均为正式策略分支"""
         return [
             {"tier": "A",  "pending": False, "safe_expiry": True},
             {"tier": "B1", "pending": False, "safe_expiry": False},
             {"tier": "B2", "pending": True,  "safe_expiry": None},
-            {"tier": "C",  "pending": False, "safe_expiry": False},
-            {"tier": "C",  "pending": True,  "safe_expiry": None},
+            {"tier": "C1", "pending": False, "safe_expiry": False},
+            {"tier": "C1", "pending": True,  "safe_expiry": None},
         ]
 
     def test_summary_keys_exist(self):
@@ -318,17 +350,17 @@ class TestComputeTiers:
 
     @staticmethod
     def _make_weeks():
-        """构造含 A*2、B1*1、C*1 的 week 列表"""
+        """构造含 A*2、B1*1、C1*1 的 week 列表"""
         return [
             {"tier": "A",  "pending": False, "safe_expiry": True},
             {"tier": "A",  "pending": False, "safe_expiry": True},
             {"tier": "B1", "pending": False, "safe_expiry": False},
-            {"tier": "C",  "pending": False, "safe_expiry": None},
+            {"tier": "C1", "pending": False, "safe_expiry": None},
         ]
 
     def test_only_traded_tiers(self):
         result = compute_tiers(self._make_weeks())
-        assert set(result.keys()) == {"A", "B1", "C"}
+        assert set(result.keys()) == {"A", "B1", "C1"}
 
     def test_tier_keys_structure(self):
         result = compute_tiers(self._make_weeks())
@@ -354,7 +386,7 @@ class TestComputeTiers:
     def test_tier_otm_values(self):
         result = compute_tiers(self._make_weeks())
         assert result["A"]["otm"] == 10
-        assert result["B1"]["otm"] == 15
+        assert result["B1"]["otm"] == 10
 
     def test_pending_excluded_from_settled(self):
         """pending 周不计入 settled"""
@@ -412,14 +444,9 @@ class TestComputeLatest:
         result = compute_latest(weekly_rows, daily_df)
         expected_keys = {
             "date", "close", "tier", "rules",
-            "strike_a", "strike_b", "expiry_date",
+            "strikes", "otm", "expiry_date",
         }
         assert expected_keys.issubset(set(result.keys()))
-        # 旧字段不应存在
-        assert "sigma" not in result
-        assert "premium" not in result
-        assert "otm" not in result
-        assert "strike" not in result
 
     def test_rules_keys(self):
         """rules 子字典含所有判断字段及原始指标值"""
@@ -429,6 +456,7 @@ class TestComputeLatest:
             "macd_today", "macd_yesterday", "macd_narrow",
             "p5_pp", "above_p5", "p30_pp", "above_p30",
             "ma20", "ma60", "dif", "hist_vol", "ma20_dist",
+            "above_ma60",
         }
         assert rule_keys == set(result["rules"].keys())
 
@@ -438,12 +466,13 @@ class TestComputeLatest:
         result = compute_latest(weekly_rows, daily_df)
         assert result["tier"] == "A"
 
-    def test_strike_a_and_b(self):
-        """strike_a = close * 0.90，strike_b = close * 0.85"""
+    def test_strikes_dict(self):
+        """strikes 为 dict，包含所有层级的行权价"""
         weekly_rows, daily_df = self._make_inputs(tier_close=100.0)
         result = compute_latest(weekly_rows, daily_df)
-        assert result["strike_a"] == pytest.approx(90.0, abs=0.01)
-        assert result["strike_b"] == pytest.approx(85.0, abs=0.01)
+        assert "strikes" in result
+        assert result["strikes"]["A"] == pytest.approx(90.0, abs=0.01)
+        assert result["strikes"]["C2"] == pytest.approx(80.0, abs=0.01)  # 20% OTM
 
     def test_expiry_date_is_trading_day(self):
         """到期日为字符串格式的美股交易日"""
@@ -476,21 +505,19 @@ class TestComputeLatest:
         )
         result = compute_latest(weekly_rows, daily_df)
         assert result["tier"] == "B1"
-        # strike_a 和 strike_b 始终存在
-        assert result["strike_a"] == pytest.approx(95.0 * 0.90, abs=0.01)
-        assert result["strike_b"] == pytest.approx(95.0 * 0.85, abs=0.01)
+        assert result["strikes"]["A"] == pytest.approx(95.0 * 0.90, abs=0.01)
+        assert result["strikes"]["B1"] == pytest.approx(95.0 * 0.90, abs=0.01)
 
 
 # ---------------------------------------------------------------------------
 # get_otm_for_ticker
 # ---------------------------------------------------------------------------
-def _expected_otm(leverage: int) -> tuple[float, float, float]:
-    """根据杠杆倍数计算期望 OTM，与 get_otm_for_ticker 公式一致"""
-    return (
-        math.floor(DEFAULT_OTM_A * 100 * leverage / 3) / 100,
-        math.floor(DEFAULT_OTM_B * 100 * leverage / 3) / 100,
-        math.floor(DEFAULT_OTM_C * 100 * leverage / 3) / 100,
-    )
+def _expected_otm(leverage: int) -> dict[str, float]:
+    """根据杠杆倍数计算期望 OTM dict"""
+    return {
+        tier: math.floor(otm * 100 * leverage / 3) / 100
+        for tier, otm in DEFAULT_OTM.items()
+    }
 
 
 class TestGetOtmForTicker:
@@ -498,19 +525,24 @@ class TestGetOtmForTicker:
 
     def test_3x_tqqq(self):
         """TQQQ 3倍杠杆 → 基准值不变"""
-        assert get_otm_for_ticker("TQQQ") == _expected_otm(3)
-
-    def test_3x_soxl(self):
-        """SOXL 3倍杠杆 → 同 TQQQ"""
-        assert get_otm_for_ticker("SOXL") == _expected_otm(3)
+        result = get_otm_for_ticker("TQQQ")
+        assert result == _expected_otm(3)
+        assert result["A"] == 0.10
+        assert result["C2"] == 0.20
 
     def test_2x_qld(self):
         """QLD 2倍杠杆"""
-        assert get_otm_for_ticker("QLD") == _expected_otm(2)
+        result = get_otm_for_ticker("QLD")
+        assert result == _expected_otm(2)
+        assert result["A"] == 0.06
+        assert result["C2"] == 0.13  # floor(20 * 2 / 3) = 13
 
     def test_1x_qqq(self):
         """QQQ 普通股票"""
-        assert get_otm_for_ticker("QQQ") == _expected_otm(1)
+        result = get_otm_for_ticker("QQQ")
+        assert result == _expected_otm(1)
+        assert result["A"] == 0.03
+        assert result["C2"] == 0.06  # floor(20 * 1 / 3) = 6
 
     def test_unknown_ticker(self):
         """未知标的默认 1 倍"""

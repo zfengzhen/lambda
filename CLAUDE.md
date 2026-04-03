@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 ├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML → 截图 PNG
-├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C)、OTM推导、回测
+├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C1-C4)、OTM推导、回测
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
 │
@@ -110,6 +110,8 @@ python -m pytest tests/ -v
 - **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
+- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。C2/C4 为 20% OTM，其余均为 10%。
+- **classify_tier 返回 C1-C4**：不再返回 `"C"`，而是 `"C1"`（趋势延续）、`"C2"`（过热追涨）、`"C3"`（跌势减速）、`"C4"`（加速下杀）。C 子分类基于 Close vs MA20/MA60 和 MACD 收窄/放大。
 
 ## 开发与提交规范
 

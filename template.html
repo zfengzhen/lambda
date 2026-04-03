@@ -158,7 +158,7 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
     <table class="weekly">
       <thead><tr>
         <th data-tip="每周首个交易日（通常为周一）">日期</th>
-        <th data-tip="策略分层：A 企稳双撑 / B1-B4 弱势守底 / C 兜底深虚观望">层级</th>
+        <th data-tip="策略分层：A 企稳双撑 / B1-B4 弱势守底 / C1 趋势延续 / C2 过热追涨 / C3 跌势减速 / C4 加速下杀">层级</th>
         <th data-tip="Out of The Money，虚值程度">OTM</th>
         <th data-tip="入场日收盘价">收盘</th>
         <th data-tip="卖出 Put 的行权价 = 收盘价 × (1 - OTM%)，点击排序" data-sort="strike" class="sortable">行权价</th>
@@ -193,10 +193,13 @@ const TIER_COLORS = {
   B2: {color:'#ff7043', bg:'#2b1a0d'},
   B3: {color:'#66bb6a', bg:'#0d2b1a'},
   B4: {color:'#ffa726', bg:'#2b200d'},
-  C:  {color:'#78909c', bg:'#1a2028'}
+  C1: {color:'#90a4ae', bg:'#1a2028'},
+  C2: {color:'#ef5350', bg:'#2b0d0d'},
+  C3: {color:'#26c6da', bg:'#0d2b2b'},
+  C4: {color:'#e53935', bg:'#2b0d0d'}
 };
-const TIER_NAMES = {A:'企稳双撑',B1:'回调均线',B2:'低波整理',B3:'超跌支撑',B4:'趋势动能弱',C:'兜底深虚观望'};
-const activeTiers = new Set(['A','B1','B2','B3','B4','C']);
+const TIER_NAMES = {A:'企稳双撑',B1:'回调均线',B2:'低波整理',B3:'超跌支撑',B4:'趋势动能弱',C1:'趋势延续',C2:'过热追涨',C3:'跌势减速',C4:'加速下杀'};
+const activeTiers = new Set(['A','B1','B2','B3','B4','C1','C2','C3','C4']);
 let currentWeeks = [];
 
 /* ===== 工具函数 ===== */
@@ -212,7 +215,7 @@ function renderOverview(summary, tiers) {
   let html = `<div class="stat"><span class="v ${safeRateCls}">${s.safe_rate}%</span><span class="d">平稳到期 ${s.safe_count}/${s.settled}</span></div>`;
   html += `<div class="stat"><span class="v blu">${s.total_weeks}</span><span class="d">总周数</span></div>`;
 
-  const order = ['A','B1','B2','B3','B4','C'];
+  const order = ['A','B1','B2','B3','B4','C1','C2','C3','C4'];
   html += order.map(k => {
     const t = tiers[k];
     if (!t) return '';
@@ -268,7 +271,6 @@ function buildDecisionHtml(data, title) {
   const b4Desc = `MA20 ${fmt(r.ma20)} ${b4_c1 ? '>' : '<'} MA60 ${fmt(r.ma60)} & DIF ${fmt(r.dif)} ${b4_c2 ? '<' : '>'} 0`;
 
   const tierLabel = `${data.tier} ${TIER_NAMES[data.tier] || ''}`;
-  const conclusionColor = data.tier === 'C' ? '#78909c' : '#4caf50';
 
   return `
     <h3 style="color:#8b95a5">${title} <span style="color:#4fc3f7">${data.date}</span></h3>
@@ -285,11 +287,35 @@ function buildDecisionHtml(data, title) {
         ${row('B2 低波整理', '#ff7043', b2Desc, b2_pass)}
         ${row('B3 超跌支撑', '#66bb6a', b3Desc, b3_pass)}
         ${row('B4 趋势动能弱', '#ffa726', b4Desc, b4_pass)}
+        ${(() => {
+          if (!data.tier || !data.tier.startsWith('C')) return '';
+          const aboveMa20 = close >= r.ma20;
+          const aboveMa60 = r.above_ma60 !== undefined ? r.above_ma60 : close >= r.ma60;
+          const ma20Abs = Math.abs(r.ma20_dist);
+          const overextend = ma20Abs > 10;
+          if (aboveMa20) {
+            return row('C 价格≥MA20', '#90a4ae',
+              'Close ' + fmt(close) + (aboveMa20 ? ' ≥ ' : ' < ') + 'MA20 ' + fmt(r.ma20) + ' | |偏离| ' + fmt(ma20Abs,1) + '% ' + (overextend ? '>' : '≤') + ' 10%', true)
+              + row(overextend ? 'C2 过热追涨' : 'C1 趋势延续', overextend ? '#ef5350' : '#90a4ae',
+              overextend ? '偏离过大，超买回调风险' : '偏离合理，趋势延续中', true);
+          } else if (!aboveMa60) {
+            return row('C 价格<MA60', '#90a4ae',
+              'Close ' + fmt(close) + ' < MA60 ' + fmt(r.ma60), true)
+              + row(r.macd_narrow ? 'C3 跌势减速' : 'C4 加速下杀', r.macd_narrow ? '#26c6da' : '#e53935',
+              r.macd_narrow ? 'MACD 收窄，空头力度递减' : 'MACD 放大，下行动能增强', true);
+          }
+          return '';
+        })()}
       </table>
-      <div class="conclusion-sell">
-        <span style="color:${conclusionColor};font-size:16px;font-weight:bold">${tierLabel}</span>
-        <span style="color:${conclusionColor};font-weight:bold;margin-left:12px">${data.otm}% OTM</span>
-      </div>
+      ${(() => {
+        const tc = TIER_COLORS[data.tier] || TIER_COLORS['C1'];
+        const cc = tc.color;
+        const cls = (data.tier === 'C2' || data.tier === 'C4') ? 'conclusion-skip' : 'conclusion-sell';
+        return '<div class="' + cls + '">' +
+          '<span style="color:' + cc + ';font-size:16px;font-weight:bold">' + tierLabel + '</span>' +
+          '<span style="color:' + cc + ';font-weight:bold;margin-left:12px">' + data.otm + '% OTM</span>' +
+          '</div>';
+      })()}
       ${data.option_symbol ? `<div style="text-align:center;margin-top:12px">
         <div style="color:#4fc3f7;font-size:15px;font-weight:bold">${data.option_symbol}</div>
       </div>` : ''}
@@ -562,8 +588,8 @@ function renderCharts(dailyBars) {
 
 /* ===== 过滤器 ===== */
 function renderFilter() {
-  const tiers = ['A','B1','B2','B3','B4','C'];
-  const colors = {A:'#4fc3f7',B1:'#ab47bc',B2:'#ff7043',B3:'#66bb6a',B4:'#ffa726',C:'#78909c'};
+  const tiers = ['A','B1','B2','B3','B4','C1','C2','C3','C4'];
+  const colors = {A:'#4fc3f7',B1:'#ab47bc',B2:'#ff7043',B3:'#66bb6a',B4:'#ffa726',C1:'#90a4ae',C2:'#ef5350',C3:'#26c6da',C4:'#e53935'};
   document.getElementById('tierFilter').innerHTML = tiers.map(t => {
     const cls = activeTiers.has(t) ? 'active' : '';
     return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${colors[t]};border-color:${colors[t]}" onclick="toggleTier('${t}')">${t}</span>`;
