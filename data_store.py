@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS option_bars (
     close        DOUBLE   NOT NULL,
     volume       BIGINT,
     transactions INTEGER,
+    strike       DOUBLE,
+    expiration   DATE,
+    option_type  VARCHAR(1),
     PRIMARY KEY (date, symbol)
 )
 """
@@ -63,11 +66,68 @@ CREATE TABLE IF NOT EXISTS splits (
 )
 """
 
+_CREATE_TICKER_IV = """
+CREATE TABLE IF NOT EXISTS ticker_iv (
+    date    DATE     NOT NULL,
+    ticker  VARCHAR  NOT NULL,
+    iv      DOUBLE   NOT NULL,
+    PRIMARY KEY (date, ticker)
+)
+"""
+
 
 def _connect() -> duckdb.DuckDBPyConnection:
     """打开数据库连接，自动创建 output 目录。"""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     return duckdb.connect(str(DB_PATH))
+
+
+def _migrate_option_bars(con: duckdb.DuckDBPyConnection) -> None:
+    """为存量 option_bars 添加 strike/expiration/option_type 列（幂等）。"""
+    cols = {r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'option_bars'"
+    ).fetchall()}
+    if "strike" not in cols:
+        con.execute("ALTER TABLE option_bars ADD COLUMN strike DOUBLE")
+        con.execute("ALTER TABLE option_bars ADD COLUMN expiration DATE")
+        con.execute("ALTER TABLE option_bars ADD COLUMN option_type VARCHAR(1)")
+        logger.info("[data_store] option_bars 迁移：添加 strike/expiration/option_type 列")
+
+
+def backfill_option_bars_columns() -> int:
+    """回填存量 option_bars 的 strike/expiration/option_type 列。
+
+    只更新 strike IS NULL 的行，从 symbol 解析。幂等操作。
+
+    Returns:
+        更新行数
+    """
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT COUNT(*) FROM option_bars WHERE strike IS NULL"
+        ).fetchone()
+        null_count = result[0] if result else 0
+        if null_count == 0:
+            return 0
+
+        con.execute("""
+            UPDATE option_bars SET
+                strike = CAST(substr(symbol, length(symbol) - 7) AS DOUBLE) / 1000.0,
+                expiration = CAST(
+                    '20' || substr(symbol, length(symbol) - 14, 2) || '-'
+                    || substr(symbol, length(symbol) - 12, 2) || '-'
+                    || substr(symbol, length(symbol) - 10, 2)
+                    AS DATE),
+                option_type = substr(symbol, length(symbol) - 8, 1)
+            WHERE strike IS NULL
+                AND symbol LIKE 'O:%' AND length(symbol) >= 17
+        """)
+        logger.info(f"[data_store] 存量回填完成：{null_count} 行")
+        return null_count
+    finally:
+        con.close()
 
 
 def init_db() -> None:
@@ -78,8 +138,12 @@ def init_db() -> None:
         con.execute(_CREATE_OPTION)
         con.execute(_CREATE_SYNC_LOG)
         con.execute(_CREATE_SPLITS)
+        con.execute(_CREATE_TICKER_IV)
+        _migrate_option_bars(con)
     finally:
         con.close()
+    # 迁移后回填存量数据（首次升级时生效）
+    backfill_option_bars_columns()
     logger.info(f"DB 初始化完成: {DB_PATH}")
 
 
@@ -212,7 +276,8 @@ def insert_option_bars_from_csv(
     if not factors:
         sql = f"""
             INSERT OR IGNORE INTO option_bars
-                (date, symbol, open, high, low, close, volume, transactions)
+                (date, symbol, open, high, low, close, volume, transactions,
+                 strike, expiration, option_type)
             SELECT
                 CAST('{date_str}' AS DATE),
                 ticker,
@@ -221,7 +286,12 @@ def insert_option_bars_from_csv(
                 CAST(low  AS DOUBLE),
                 CAST(close AS DOUBLE),
                 TRY_CAST(CAST(volume AS VARCHAR) AS BIGINT),
-                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT)
+                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT),
+                CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0,
+                CAST('20' || substr(ticker, length(ticker) - 14, 2) || '-'
+                     || substr(ticker, length(ticker) - 12, 2) || '-'
+                     || substr(ticker, length(ticker) - 10, 2) AS DATE),
+                substr(ticker, length(ticker) - 8, 1)
             FROM read_csv('{str(csv_path)}', compression='gzip', header=true,
                 auto_detect=true)
             {where_sql}
@@ -263,9 +333,21 @@ def insert_option_bars_from_csv(
         vol_expr = ("CASE " + " ".join(vol_cases)
                     + " ELSE TRY_CAST(CAST(volume AS VARCHAR) AS BIGINT) END")
 
+        # strike 需随拆股因子调整（与价格同向）
+        strike_cases = []
+        for t, pf in factors.items():
+            like = f"ticker LIKE 'O:{t}%'"
+            strike_cases.append(
+                f"WHEN {like} THEN "
+                f"CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0 * {pf}"
+            )
+        strike_expr = ("CASE " + " ".join(strike_cases)
+                       + " ELSE CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0 END")
+
         sql = f"""
             INSERT OR IGNORE INTO option_bars
-                (date, symbol, open, high, low, close, volume, transactions)
+                (date, symbol, open, high, low, close, volume, transactions,
+                 strike, expiration, option_type)
             SELECT
                 CAST('{date_str}' AS DATE),
                 {symbol_expr},
@@ -274,7 +356,12 @@ def insert_option_bars_from_csv(
                 {low_expr},
                 {close_expr},
                 {vol_expr},
-                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT)
+                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT),
+                {strike_expr},
+                CAST('20' || substr(ticker, length(ticker) - 14, 2) || '-'
+                     || substr(ticker, length(ticker) - 12, 2) || '-'
+                     || substr(ticker, length(ticker) - 10, 2) AS DATE),
+                substr(ticker, length(ticker) - 8, 1)
             FROM read_csv('{str(csv_path)}', compression='gzip', header=true,
                 auto_detect=true)
             {where_sql}
@@ -430,6 +517,74 @@ def query_equity_bars(ticker: str, from_date: str, to_date: str) -> list[dict]:
     ]
 
 
+def upsert_ticker_iv(rows: list[dict]) -> int:
+    """批量写入/更新 ticker IV。主键冲突时覆盖。
+
+    Args:
+        rows: list of {date, ticker, iv}
+
+    Returns:
+        写入行数
+    """
+    if not rows:
+        return 0
+    con = _connect()
+    try:
+        con.executemany(
+            """
+            INSERT INTO ticker_iv (date, ticker, iv)
+            VALUES (?, ?, ?)
+            ON CONFLICT (date, ticker) DO UPDATE SET iv = excluded.iv
+            """,
+            [(r["date"], r["ticker"], r["iv"]) for r in rows],
+        )
+    finally:
+        con.close()
+    return len(rows)
+
+
+def query_ticker_iv(ticker: str, from_date: str, to_date: str) -> list[dict]:
+    """查询指定 ticker 的 IV 数据。
+
+    Returns:
+        [{date, ticker, iv}] 按日期升序
+    """
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT date, ticker, iv FROM ticker_iv "
+            "WHERE ticker = ? AND date BETWEEN ? AND ? ORDER BY date",
+            [ticker, from_date, to_date],
+        ).fetchall()
+    finally:
+        con.close()
+    return [{"date": str(r[0]), "ticker": r[1], "iv": r[2]} for r in rows]
+
+
+def get_latest_iv_date(ticker: str) -> str | None:
+    """返回指定 ticker 在 ticker_iv 表中的最新日期，无数据返回 None。"""
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT MAX(date) FROM ticker_iv WHERE ticker = ?", [ticker]
+        ).fetchone()
+    finally:
+        con.close()
+    if result and result[0] is not None:
+        return str(result[0])
+    return None
+
+
+def delete_ticker_iv(ticker: str) -> None:
+    """清空指定 ticker 的 ticker_iv 记录。"""
+    con = _connect()
+    try:
+        con.execute("DELETE FROM ticker_iv WHERE ticker = ?", [ticker])
+    finally:
+        con.close()
+    logger.info(f"[data_store] 已清空 {ticker} 的 ticker_iv")
+
+
 _TABLE_MAP = {"option": "option_bars", "equity": "equity_bars"}
 
 
@@ -502,7 +657,7 @@ def compute_split_factor(ticker: str, date_str: str) -> float:
 
 
 def delete_ticker_data(ticker: str) -> None:
-    """清空指定 ticker 的 equity_bars、option_bars 和 option_month sync_log。
+    """清空指定 ticker 的 equity_bars、option_bars、option_month sync_log 和 ticker_iv。
 
     用于拆股后的全量重拉前清理。
     sync_log 只清 option_month 记录（期权 CSV 包含所有 ticker，需重新入库以应用新因子）。
@@ -517,9 +672,10 @@ def delete_ticker_data(ticker: str) -> None:
         )
         # 清 option_month sync_log，强制重新下载并以新因子入库
         con.execute("DELETE FROM sync_log WHERE data_type = 'option_month'")
+        con.execute("DELETE FROM ticker_iv WHERE ticker = ?", [ticker])
     finally:
         con.close()
-    logger.info(f"[data_store] 已清空 {ticker} 的 equity_bars + option_bars + option_month sync_log")
+    logger.info(f"[data_store] 已清空 {ticker} 的 equity_bars + option_bars + option_month sync_log + ticker_iv")
 
 
 def is_synced(date_str: str, data_type: str) -> bool:

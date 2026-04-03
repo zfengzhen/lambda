@@ -113,3 +113,49 @@ def test_ensure_synced_new_split_triggers_purge(tmp_path):
     today = datetime.date.today()
     from_date = datetime.date.fromisoformat(s3_from)
     assert (today - from_date).days >= 365 * 2 - 1
+
+
+def test_ensure_synced_calls_sync_ticker_iv(tmp_path):
+    """ensure_synced 应在同步完成后调用 sync_ticker_iv"""
+    db_path = tmp_path / "test.duckdb"
+    yesterday = str(datetime.date.today() - datetime.timedelta(days=1))
+
+    with patch.object(data_store, "DB_PATH", db_path), \
+         patch.object(data_sync, "sync_ticker_iv") as mock_iv, \
+         patch("data_sync.rest_downloader.download_splits", return_value=[]), \
+         patch("data_sync.rest_downloader.sync_equity"), \
+         patch("data_sync.s3_downloader.sync_options"):
+        data_store.init_db()
+        # 预置数据使同步被跳过
+        data_store.upsert_equity_bars([{
+            "date": yesterday, "ticker": "TQQQ",
+            "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.0,
+            "volume": 1000, "vwap": 50.0, "transactions": 100,
+        }])
+        data_sync.ensure_synced(["TQQQ"], "test_key")
+        mock_iv.assert_called_once_with(["TQQQ"])
+
+
+def test_ensure_synced_calls_iv_even_when_synced(tmp_path):
+    """即使数据已最新，IV 也应被计算（可能有历史数据未算 IV）"""
+    db_path = tmp_path / "test.duckdb"
+    yesterday = str(datetime.date.today() - datetime.timedelta(days=1))
+
+    with patch.object(data_store, "DB_PATH", db_path), \
+         patch.object(data_sync, "sync_ticker_iv") as mock_iv, \
+         patch("data_sync.rest_downloader.download_splits", return_value=[]), \
+         patch("data_sync.s3_downloader.sync_options") as mock_s3, \
+         patch("data_sync.rest_downloader.sync_equity") as mock_rest:
+        data_store.init_db()
+        data_store.upsert_equity_bars([{
+            "date": yesterday, "ticker": "TQQQ",
+            "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.0,
+            "volume": 1000, "vwap": 50.0, "transactions": 100,
+        }])
+        data_sync.ensure_synced(["TQQQ"], "test_key")
+
+    # sync should be skipped (data already latest)
+    mock_s3.assert_not_called()
+    mock_rest.assert_not_called()
+    # but IV should still run
+    mock_iv.assert_called_once_with(["TQQQ"])
