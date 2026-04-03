@@ -585,3 +585,52 @@ def test_delete_ticker_data_clears_ticker_iv(tmp_db, tmp_path):
         ])
         data_store.delete_ticker_data("TQQQ")
         assert data_store.get_latest_iv_date("TQQQ") is None
+
+
+# ── strike/expiration/option_type 填充 ───────────────────────
+
+def test_insert_csv_populates_new_columns(tmp_db, tmp_path):
+    """入库后 strike/expiration/option_type 应被填充"""
+    rows = [
+        {"ticker": "O:TQQQ260424P00030000", "volume": "10", "open": "0.85",
+         "close": "0.87", "high": "0.90", "low": "0.80",
+         "window_start": "1000", "transactions": "3"},
+    ]
+    f = tmp_path / "2026-04-01.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.insert_option_bars_from_csv(f, "2026-04-01")
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute(
+        "SELECT strike, expiration, option_type FROM option_bars"
+    ).fetchone()
+    con.close()
+    assert abs(row[0] - 30.0) < 0.01
+    assert str(row[1]) == "2026-04-24"
+    assert row[2] == "P"
+
+
+def test_insert_csv_new_columns_with_split(tmp_db, tmp_path):
+    """拆股调整后，新列 strike 应反映调整后的值"""
+    rows = [
+        {"ticker": "O:TQQQ250131P00038500", "volume": "100", "open": "4.00",
+         "close": "3.80", "high": "4.20", "low": "3.60",
+         "window_start": "1000", "transactions": "10"},
+    ]
+    f = tmp_path / "2025-01-06.csv.gz"
+    f.write_bytes(_make_csv_gz_ds(rows))
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_splits([
+            {"ticker": "TQQQ", "exec_date": "2025-11-20",
+             "split_from": 1, "split_to": 2},
+        ])
+        data_store.insert_option_bars_from_csv(f, "2025-01-06", tickers=["TQQQ"])
+    con = duckdb.connect(str(tmp_db))
+    row = con.execute(
+        "SELECT symbol, strike, expiration, option_type FROM option_bars"
+    ).fetchone()
+    con.close()
+    assert row[0] == "O:TQQQ250131P00019250"
+    assert abs(row[1] - 19.25) < 0.01
+    assert str(row[2]) == "2025-01-31"
+    assert row[3] == "P"

@@ -239,7 +239,8 @@ def insert_option_bars_from_csv(
     if not factors:
         sql = f"""
             INSERT OR IGNORE INTO option_bars
-                (date, symbol, open, high, low, close, volume, transactions)
+                (date, symbol, open, high, low, close, volume, transactions,
+                 strike, expiration, option_type)
             SELECT
                 CAST('{date_str}' AS DATE),
                 ticker,
@@ -248,7 +249,12 @@ def insert_option_bars_from_csv(
                 CAST(low  AS DOUBLE),
                 CAST(close AS DOUBLE),
                 TRY_CAST(CAST(volume AS VARCHAR) AS BIGINT),
-                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT)
+                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT),
+                CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0,
+                CAST('20' || substr(ticker, length(ticker) - 14, 2) || '-'
+                     || substr(ticker, length(ticker) - 12, 2) || '-'
+                     || substr(ticker, length(ticker) - 10, 2) AS DATE),
+                substr(ticker, length(ticker) - 8, 1)
             FROM read_csv('{str(csv_path)}', compression='gzip', header=true,
                 auto_detect=true)
             {where_sql}
@@ -290,9 +296,21 @@ def insert_option_bars_from_csv(
         vol_expr = ("CASE " + " ".join(vol_cases)
                     + " ELSE TRY_CAST(CAST(volume AS VARCHAR) AS BIGINT) END")
 
+        # strike 需随拆股因子调整（与价格同向）
+        strike_cases = []
+        for t, pf in factors.items():
+            like = f"ticker LIKE 'O:{t}%'"
+            strike_cases.append(
+                f"WHEN {like} THEN "
+                f"CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0 * {pf}"
+            )
+        strike_expr = ("CASE " + " ".join(strike_cases)
+                       + " ELSE CAST(substr(ticker, length(ticker) - 7) AS DOUBLE) / 1000.0 END")
+
         sql = f"""
             INSERT OR IGNORE INTO option_bars
-                (date, symbol, open, high, low, close, volume, transactions)
+                (date, symbol, open, high, low, close, volume, transactions,
+                 strike, expiration, option_type)
             SELECT
                 CAST('{date_str}' AS DATE),
                 {symbol_expr},
@@ -301,7 +319,12 @@ def insert_option_bars_from_csv(
                 {low_expr},
                 {close_expr},
                 {vol_expr},
-                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT)
+                TRY_CAST(CAST(transactions AS VARCHAR) AS BIGINT),
+                {strike_expr},
+                CAST('20' || substr(ticker, length(ticker) - 14, 2) || '-'
+                     || substr(ticker, length(ticker) - 12, 2) || '-'
+                     || substr(ticker, length(ticker) - 10, 2) AS DATE),
+                substr(ticker, length(ticker) - 8, 1)
             FROM read_csv('{str(csv_path)}', compression='gzip', header=true,
                 auto_detect=true)
             {where_sql}
