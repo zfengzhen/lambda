@@ -693,6 +693,24 @@ def test_backfill_idempotent(tmp_db, tmp_path):
     assert count == 1
 
 
+# ── sync_log ticker 维度 ─────────────────────────────────────
+
+def test_is_synced_with_ticker(tmp_db):
+    """sync_log 带 ticker 时只匹配对应 ticker。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.write_sync_log("2026-03-01", "option_month", 1000, "ok",
+                                  ticker="TQQQ")
+        assert data_store.is_synced("2026-03-01", "option_month", ticker="TQQQ")
+        assert not data_store.is_synced("2026-03-01", "option_month", ticker="QQQ")
+
+
+def test_is_synced_without_ticker_backward_compat(tmp_db):
+    """不传 ticker 时保持原行为（向后兼容）。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.write_sync_log("2026-03-01", "option_month", 1000, "ok")
+        assert data_store.is_synced("2026-03-01", "option_month")
+
+
 def test_get_latest_equity_date_per_ticker(tmp_db):
     """per-ticker 查询各自的最新日期。"""
     with patch.object(data_store, "DB_PATH", tmp_db):
