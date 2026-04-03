@@ -634,3 +634,60 @@ def test_insert_csv_new_columns_with_split(tmp_db, tmp_path):
     assert abs(row[1] - 19.25) < 0.01
     assert str(row[2]) == "2025-01-31"
     assert row[3] == "P"
+
+
+def test_backfill_option_bars_columns(tmp_db, tmp_path):
+    """存量数据 strike=NULL，回填后应有值"""
+    con = duckdb.connect(str(tmp_db))
+    con.execute(
+        "INSERT INTO option_bars (date, symbol, open, high, low, close, volume, transactions) "
+        "VALUES ('2025-01-06', 'O:TQQQ250131P00038500', 0.85, 0.90, 0.80, 0.87, 10, 3)"
+    )
+    con.execute(
+        "INSERT INTO option_bars (date, symbol, open, high, low, close, volume, transactions) "
+        "VALUES ('2025-01-06', 'O:QQQ260515C00450000', 1.0, 1.5, 0.9, 1.2, 5, 2)"
+    )
+    row = con.execute("SELECT strike FROM option_bars WHERE symbol='O:TQQQ250131P00038500'").fetchone()
+    assert row[0] is None
+    con.close()
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.backfill_option_bars_columns()
+
+    con = duckdb.connect(str(tmp_db))
+    r1 = con.execute(
+        "SELECT strike, expiration, option_type FROM option_bars "
+        "WHERE symbol='O:TQQQ250131P00038500'"
+    ).fetchone()
+    r2 = con.execute(
+        "SELECT strike, expiration, option_type FROM option_bars "
+        "WHERE symbol='O:QQQ260515C00450000'"
+    ).fetchone()
+    con.close()
+
+    assert abs(r1[0] - 38.5) < 0.01
+    assert str(r1[1]) == "2025-01-31"
+    assert r1[2] == "P"
+
+    assert abs(r2[0] - 450.0) < 0.01
+    assert str(r2[1]) == "2026-05-15"
+    assert r2[2] == "C"
+
+
+def test_backfill_idempotent(tmp_db, tmp_path):
+    """已回填的数据再次调用不报错"""
+    con = duckdb.connect(str(tmp_db))
+    con.execute(
+        "INSERT INTO option_bars (date, symbol, open, high, low, close, volume, transactions) "
+        "VALUES ('2025-01-06', 'O:TQQQ250131P00038500', 0.85, 0.90, 0.80, 0.87, 10, 3)"
+    )
+    con.close()
+
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.backfill_option_bars_columns()
+        data_store.backfill_option_bars_columns()  # 再次调用
+
+    con = duckdb.connect(str(tmp_db))
+    count = con.execute("SELECT COUNT(*) FROM option_bars").fetchone()[0]
+    con.close()
+    assert count == 1

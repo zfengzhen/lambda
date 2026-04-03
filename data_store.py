@@ -95,6 +95,40 @@ def _migrate_option_bars(con: duckdb.DuckDBPyConnection) -> None:
         logger.info("[data_store] option_bars 迁移：添加 strike/expiration/option_type 列")
 
 
+def backfill_option_bars_columns() -> int:
+    """回填存量 option_bars 的 strike/expiration/option_type 列。
+
+    只更新 strike IS NULL 的行，从 symbol 解析。幂等操作。
+
+    Returns:
+        更新行数
+    """
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT COUNT(*) FROM option_bars WHERE strike IS NULL"
+        ).fetchone()
+        null_count = result[0] if result else 0
+        if null_count == 0:
+            return 0
+
+        con.execute("""
+            UPDATE option_bars SET
+                strike = CAST(substr(symbol, length(symbol) - 7) AS DOUBLE) / 1000.0,
+                expiration = CAST(
+                    '20' || substr(symbol, length(symbol) - 14, 2) || '-'
+                    || substr(symbol, length(symbol) - 12, 2) || '-'
+                    || substr(symbol, length(symbol) - 10, 2)
+                    AS DATE),
+                option_type = substr(symbol, length(symbol) - 8, 1)
+            WHERE strike IS NULL
+        """)
+        logger.info(f"[data_store] 存量回填完成：{null_count} 行")
+        return null_count
+    finally:
+        con.close()
+
+
 def init_db() -> None:
     """建表（幂等，已存在则跳过）。"""
     con = _connect()
@@ -107,6 +141,8 @@ def init_db() -> None:
         _migrate_option_bars(con)
     finally:
         con.close()
+    # 迁移后回填存量数据（首次升级时生效）
+    backfill_option_bars_columns()
     logger.info(f"DB 初始化完成: {DB_PATH}")
 
 
