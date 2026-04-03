@@ -25,11 +25,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── notify.py            # Telegram 截图推送：扫描 output/*.png → 发送 → 删除
 ├── com.lambda.scheduled-notify.plist  # macOS launchd 定时任务（每日自动运行策略+推送）
 │
-├── output/              # 运行产物（gitignore）
-│   ├── market_data.duckdb        # 本地期权/股票数据库
-│   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（按日期命名）
-│   ├── {TICKER}.json             # 策略数据（含 daily_bars，供 HTML 生成用）
-│   └── {TICKER}.html             # 可视化报告
+├── output/
+│   ├── market_data.duckdb        # 本地期权/股票数据库（已提交，方便共享基线数据）
+│   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（gitignore）
+│   ├── {TICKER}.json             # 策略数据（gitignore）
+│   └── {TICKER}.html             # 可视化报告（gitignore）
 ├── conftest.py          # pytest 全局配置：注册 online marker，默认跳过在线测试
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖
