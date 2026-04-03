@@ -8,3 +8,4 @@ output/*.json
 output/*.html
 output/*.png
 output/flat_files_cache/
+output/*.duckdb
