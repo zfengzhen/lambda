@@ -5,4 +5,5 @@ pytest>=7.0
 playwright>=1.40
 boto3>=1.26
 duckdb>=0.10
+scipy>=1.10
 exchange_calendars>=4.5

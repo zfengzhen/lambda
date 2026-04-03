@@ -16,8 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
 │
-├── data_sync.py         # 数据同步 CLI：ensure_synced 自动判断全量/增量
-├── data_store.py        # DuckDB 本地存储：建表、写入、查询（option_bars / equity_bars）
+├── iv.py                # 标的级 IV 计算：OCC 解析、B-S 反算、VIX 风格加权
+├── data_sync.py         # 数据同步 CLI：ensure_synced 自动判断全量/增量（含 IV 计算）
+├── data_store.py        # DuckDB 本地存储：建表、写入、查询（option_bars / equity_bars / ticker_iv）
 ├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB（S3 客户端复用 flat_file_fetcher）
 ├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
 ├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
@@ -51,10 +52,12 @@ ensure_synced() → DuckDB equity_bars → 指标计算 → 策略计算 → JSO
 ```
 S3 Flat Files (.csv.gz) → DuckDB option_bars   # 期权日K，按月批量写入
 Massive REST API        → DuckDB equity_bars   # 股票日K
+option_bars + equity_bars → B-S 反算 → DuckDB ticker_iv  # 标的级 IV
 ```
 
 - `run.py` 每次运行先调用 `ensure_synced()`，空库同步近 2 年，有数据则增量补齐
 - 增量同步基于 `sync_log` 表（月级，`data_type='option_month'`）
+- IV 计算在每次 `ensure_synced()` 末尾自动执行，空表全量、有数据增量
 
 ## API 文档
 
@@ -112,6 +115,9 @@ python -m pytest tests/ -v
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
 - **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。C2/C4 为 20% OTM，其余均为 10%。
 - **classify_tier 返回 C1-C4**：不再返回 `"C"`，而是 `"C1"`（趋势延续）、`"C2"`（过热追涨）、`"C3"`（跌势减速）、`"C4"`（加速下杀）。C 子分类基于 Close vs MA20/MA60 和 MACD 收窄/放大。
+- **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。
+- **option_bars 新增结构化列**：`strike`/`expiration`/`option_type` 在入库时从 OCC symbol 解析填入。存量数据由 `init_db()` 自动回填。
+- **IV 计算依赖 scipy**：`iv.py` 使用 `scipy.stats.norm` 做 B-S 定价，需 `pip install scipy`。
 
 ## 开发与提交规范
 
