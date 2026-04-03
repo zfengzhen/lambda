@@ -135,3 +135,84 @@ def select_contracts(option_bars: list[dict], spot: float,
             selected.extend(typed[:N_STRIKES])
 
     return selected
+
+
+# IV 过滤范围
+_IV_MIN = 0.01
+_IV_MAX = 5.0
+# 插值目标天数
+_TARGET_DAYS = 30
+
+
+def compute_ticker_iv(option_bars: list[dict], spot: float,
+                      date: str) -> float:
+    """VIX 风格加权计算标的级 IV。
+
+    流程：
+    1. 筛选 ATM 附近、最近两个到期日的合约
+    2. 逐合约 B-S 反算 IV
+    3. 过滤异常值
+    4. 同一到期日内等权平均
+    5. 近月/远月线性插值到 30 天期限
+
+    Args:
+        option_bars: option_bars 记录列表，需含 strike/expiration/option_type/close 字段
+        spot:        标的当日收盘价
+        date:        当前日期 "YYYY-MM-DD"
+
+    Returns:
+        标的级 IV（年化）；数据不足返回 float('nan')
+    """
+    selected = select_contracts(option_bars, spot, date)
+    if not selected:
+        return float("nan")
+
+    current = _dt.date.fromisoformat(date)
+
+    # 逐合约算 IV，按到期日分组
+    iv_by_expiry: dict[str, list[float]] = {}
+    for bar in selected:
+        exp = bar["expiration"]
+        dte = (_dt.date.fromisoformat(exp) - current).days
+        tte = dte / 252.0
+        iv = bs_implied_vol(bar["close"], spot, bar["strike"],
+                            tte, RISK_FREE_RATE, bar["option_type"])
+        if not math.isnan(iv) and _IV_MIN <= iv <= _IV_MAX:
+            iv_by_expiry.setdefault(exp, []).append(iv)
+
+    if not iv_by_expiry:
+        return float("nan")
+
+    # 每个到期日等权平均
+    expiry_iv = {}
+    for exp, ivs in iv_by_expiry.items():
+        if ivs:
+            expiry_iv[exp] = sum(ivs) / len(ivs)
+
+    if not expiry_iv:
+        return float("nan")
+
+    # 只有一个到期日，直接返回
+    if len(expiry_iv) == 1:
+        return list(expiry_iv.values())[0]
+
+    # 两个到期日：线性插值到 _TARGET_DAYS
+    sorted_exps = sorted(expiry_iv.keys())
+    exp_near, exp_far = sorted_exps[0], sorted_exps[1]
+    dte_near = (_dt.date.fromisoformat(exp_near) - current).days
+    dte_far = (_dt.date.fromisoformat(exp_far) - current).days
+    iv_near = expiry_iv[exp_near]
+    iv_far = expiry_iv[exp_far]
+
+    if dte_far == dte_near:
+        return (iv_near + iv_far) / 2
+
+    # 线性插值
+    target = _TARGET_DAYS
+    if target <= dte_near:
+        return iv_near
+    if target >= dte_far:
+        return iv_far
+
+    w = (dte_far - target) / (dte_far - dte_near)
+    return w * iv_near + (1 - w) * iv_far

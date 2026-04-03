@@ -197,3 +197,68 @@ class TestSelectContracts:
     def test_empty_bars_returns_empty(self):
         selected = select_contracts([], self.spot, self.date)
         assert selected == []
+
+
+from iv import compute_ticker_iv
+
+
+class TestComputeTickerIv:
+    def test_basic_computation(self):
+        """给定固定数据，验证 IV 在合理范围"""
+        date = "2026-04-03"
+        spot = 50.0
+        expiry_near = "2026-04-17"  # 14 天
+        expiry_far = "2026-05-15"   # 42 天
+
+        bars = []
+        sigma = 0.60
+        r = 0.05
+        for exp, dte_days in [(expiry_near, 14), (expiry_far, 42)]:
+            tte = dte_days / 252
+            for s in [48.0, 49.0, 50.0, 51.0, 52.0]:
+                for opt_type in ["P", "C"]:
+                    price = _bs_price_test(spot, s, tte, r, sigma, opt_type)
+                    bars.append(_make_option_row("TEST", exp, opt_type, s, price, date))
+
+        iv = compute_ticker_iv(bars, spot, date)
+        assert abs(iv - 0.60) < 0.05
+
+    def test_empty_bars_returns_nan(self):
+        iv = compute_ticker_iv([], 50.0, "2026-04-03")
+        assert math.isnan(iv)
+
+    def test_single_expiry(self):
+        """只有一个到期日时，不做插值"""
+        date = "2026-04-03"
+        spot = 50.0
+        expiry = "2026-04-17"
+        sigma = 0.80
+        r = 0.05
+        tte = 14 / 252
+        bars = []
+        for s in [49.0, 50.0, 51.0]:
+            for opt_type in ["P", "C"]:
+                price = _bs_price_test(spot, s, tte, r, sigma, opt_type)
+                bars.append(_make_option_row("TEST", expiry, opt_type, s, price, date))
+
+        iv = compute_ticker_iv(bars, spot, date)
+        assert abs(iv - 0.80) < 0.05
+
+    def test_filters_anomalous_iv(self):
+        """含异常合约（价格极低），不应影响结果"""
+        date = "2026-04-03"
+        spot = 50.0
+        expiry = "2026-04-17"
+        sigma = 0.60
+        r = 0.05
+        tte = 14 / 252
+        bars = []
+        for s in [49.0, 50.0, 51.0]:
+            for opt_type in ["P", "C"]:
+                price = _bs_price_test(spot, s, tte, r, sigma, opt_type)
+                bars.append(_make_option_row("TEST", expiry, opt_type, s, price, date))
+        # 加一个价格极低的异常合约
+        bars.append(_make_option_row("TEST", expiry, "C", 80.0, 0.001, date))
+
+        iv = compute_ticker_iv(bars, spot, date)
+        assert abs(iv - 0.60) < 0.05
