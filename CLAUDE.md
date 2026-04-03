@@ -56,8 +56,8 @@ Massive REST API        → DuckDB equity_bars   # 股票日K
 option_bars + equity_bars → B-S 反算 → DuckDB ticker_iv  # 标的级 IV
 ```
 
-- `run.py` 每次运行先调用 `ensure_synced()`，空库同步近 2 年，有数据则增量补齐
-- 增量同步基于 `sync_log` 表（月级，`data_type='option_month'`）
+- `run.py` 每次运行先调用 `ensure_synced()`，每个 ticker 独立判断：空库全量（近 2 年），有数据增量补齐
+- equity 增量基于 per-ticker `MAX(date)`；option 增量基于 per-ticker 月级 `sync_log`
 - IV 计算在每次 `ensure_synced()` 末尾自动执行，空表全量、有数据增量
 
 ## API 文档
@@ -110,16 +110,16 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 
 ## Gotchas
 
-- **月级 sync_log 用独立 data_type**：`sync_options` 写入 sync_log 时 `data_type='option_month'`，键为月份第一天（如 `2024-04-01`）。若误用 `'option'`，会与旧日级记录冲突，导致整月被错误跳过。
+- **月级 sync_log 用独立 data_type**：`sync_options` 写入 sync_log 时 `data_type='option_month'`，键为月份第一天（如 `2024-04-01`）。若误用 `'option'`，会与旧日级记录冲突，导致整月被错误跳过。sync_log 新增 `ticker` 列，`option_month` 记录按 ticker 独立标记，TQQQ 已同步的月份不影响 QQQ 的同步判断。
 - **flat_files_cache 是永久缓存**：`output/flat_files_cache/*.csv.gz` 不会自动清理，重跑直接复用，无需重新下载。
 - **INSERT OR IGNORE**：`insert_option_bars_from_csv` 使用 `INSERT OR IGNORE`，同月重跑安全，不会报主键冲突。
-- **ensure_synced 以 equity_bars 最新日期为基准**：空库时同步近 2 年；有数据时从最新日期次日增量补齐；数据已是昨天则直接跳过，< 1 秒返回。
+- **ensure_synced 按 ticker 独立计算同步起点**：每个 ticker 查自己的 `MAX(date)`（`get_latest_equity_date`），没数据的走全量（近 2 年），已最新的跳过。不再使用全局 `MAX(date)`。
 - **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
-- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。C2/C4 为 20% OTM，其余均为 10%。
+- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。所有层级统一为 10% OTM。
 - **classify_tier 返回 C1-C4**：不再返回 `"C"`，而是 `"C1"`（趋势延续）、`"C2"`（过热追涨）、`"C3"`（跌势减速）、`"C4"`（加速下杀）。C 子分类基于 Close vs MA20/MA60 和 MACD 收窄/放大。
-- **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。
+- **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。该函数只清目标 ticker 的 `option_month` sync_log，不影响其他 ticker 的同步状态。
 - **option_bars 新增结构化列**：`strike`/`expiration`/`option_type` 在入库时从 OCC symbol 解析填入。存量数据由 `init_db()` 自动回填。
 - **IV 计算依赖 scipy**：`iv.py` 使用 `scipy.stats.norm` 做 B-S 定价，需 `pip install scipy`。
 - **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法，与 VIX 方法论一致。

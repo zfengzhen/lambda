@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS sync_log (
     ts           TIMESTAMP NOT NULL,
     date         DATE      NOT NULL,
     data_type    VARCHAR   NOT NULL,
+    ticker       VARCHAR,
     rows_written INTEGER   NOT NULL,
     status       VARCHAR   NOT NULL,
     message      VARCHAR
@@ -140,6 +141,11 @@ def init_db() -> None:
         con.execute(_CREATE_SPLITS)
         con.execute(_CREATE_TICKER_IV)
         _migrate_option_bars(con)
+        # sync_log 增加 ticker 列（兼容旧库）
+        try:
+            con.execute("ALTER TABLE sync_log ADD COLUMN ticker VARCHAR")
+        except duckdb.CatalogException:
+            pass
     finally:
         con.close()
     # 迁移后回填存量数据（首次升级时生效）
@@ -610,17 +616,33 @@ def get_latest_synced_date(data_type: str) -> str | None:
     return None
 
 
+def get_latest_equity_date(ticker: str) -> str | None:
+    """返回指定 ticker 在 equity_bars 中的最新日期，无数据返回 None。"""
+    con = _connect()
+    try:
+        result = con.execute(
+            "SELECT MAX(date) FROM equity_bars WHERE ticker = ?",
+            [ticker],
+        ).fetchone()
+    finally:
+        con.close()
+    if result and result[0] is not None:
+        return str(result[0])
+    return None
+
+
 def write_sync_log(date: str, data_type: str, rows_written: int,
-                   status: str, message: str = None) -> None:
+                   status: str, message: str = None,
+                   ticker: str = None) -> None:
     """写入一条同步记录。"""
     con = _connect()
     try:
         con.execute(
             """
-            INSERT INTO sync_log (ts, data_type, date, rows_written, status, message)
-            VALUES (now(), ?, ?, ?, ?, ?)
+            INSERT INTO sync_log (ts, data_type, date, ticker, rows_written, status, message)
+            VALUES (now(), ?, ?, ?, ?, ?, ?)
             """,
-            [data_type, date, rows_written, status, message],
+            [data_type, date, ticker, rows_written, status, message],
         )
     finally:
         con.close()
@@ -657,10 +679,10 @@ def compute_split_factor(ticker: str, date_str: str) -> float:
 
 
 def delete_ticker_data(ticker: str) -> None:
-    """清空指定 ticker 的 equity_bars、option_bars、option_month sync_log 和 ticker_iv。
+    """清空指定 ticker 的 equity_bars、option_bars、该 ticker 的 option_month sync_log 和 ticker_iv。
 
     用于拆股后的全量重拉前清理。
-    sync_log 只清 option_month 记录（期权 CSV 包含所有 ticker，需重新入库以应用新因子）。
+    sync_log 只清目标 ticker 的 option_month 记录，不影响其他 ticker 的同步状态。
     equity 的同步范围由 ensure_synced 的 need_purge 逻辑控制，无需清 sync_log。
     """
     con = _connect()
@@ -670,24 +692,41 @@ def delete_ticker_data(ticker: str) -> None:
             "DELETE FROM option_bars WHERE symbol LIKE ?",
             [f"O:{ticker}%"],
         )
-        # 清 option_month sync_log，强制重新下载并以新因子入库
-        con.execute("DELETE FROM sync_log WHERE data_type = 'option_month'")
+        # 只清目标 ticker 的 option_month sync_log，强制重新下载并以新因子入库
+        con.execute(
+            "DELETE FROM sync_log WHERE data_type = 'option_month' AND ticker = ?",
+            [ticker],
+        )
         con.execute("DELETE FROM ticker_iv WHERE ticker = ?", [ticker])
     finally:
         con.close()
     logger.info(f"[data_store] 已清空 {ticker} 的 equity_bars + option_bars + option_month sync_log + ticker_iv")
 
 
-def is_synced(date_str: str, data_type: str) -> bool:
-    """检查指定日期和类型是否已在 sync_log 中有 ok 记录。DB 或表不存在时返回 False。"""
+def is_synced(date_str: str, data_type: str, ticker: str = None) -> bool:
+    """检查指定日期和类型是否已在 sync_log 中有 ok 记录。DB 或表不存在时返回 False。
+
+    Args:
+        date_str:  日期字符串
+        data_type: 数据类型
+        ticker:    标的代码，传入时精确匹配；None 时不过滤 ticker
+    """
     if not DB_PATH.exists():
         return False
     con = _connect()
     try:
-        result = con.execute(
-            "SELECT COUNT(*) FROM sync_log WHERE date=? AND data_type=? AND status='ok'",
-            [date_str, data_type],
-        ).fetchone()[0]
+        if ticker is not None:
+            result = con.execute(
+                "SELECT COUNT(*) FROM sync_log "
+                "WHERE date=? AND data_type=? AND ticker=? AND status='ok'",
+                [date_str, data_type, ticker],
+            ).fetchone()[0]
+        else:
+            result = con.execute(
+                "SELECT COUNT(*) FROM sync_log "
+                "WHERE date=? AND data_type=? AND status='ok'",
+                [date_str, data_type],
+            ).fetchone()[0]
     except duckdb.CatalogException:
         return False
     finally:

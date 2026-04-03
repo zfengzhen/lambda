@@ -383,7 +383,8 @@ def test_delete_ticker_data(tmp_db, tmp_path):
     with patch.object(data_store, "DB_PATH", tmp_db):
         data_store.upsert_equity_bars(rows_eq)
         data_store.insert_option_bars_from_csv(f, "2025-01-06")
-        data_store.write_sync_log("2025-01-06", "option_month", 100, "ok")
+        data_store.write_sync_log("2025-01-06", "option_month", 100, "ok",
+                                  ticker="TQQQ")
         data_store.write_sync_log("2025-01-06", "equity", 1, "ok")
 
         data_store.delete_ticker_data("TQQQ")
@@ -398,8 +399,8 @@ def test_delete_ticker_data(tmp_db, tmp_path):
         qqq_opts = data_store.query_option_bars(
             "O:QQQ250131P00400000", "2025-01-06", "2025-01-06")
         assert len(qqq_opts) == 1
-        # option_month sync_log 被清空，equity sync_log 保留
-        assert not data_store.is_synced("2025-01-06", "option_month")
+        # TQQQ 的 option_month sync_log 被清空，equity sync_log 保留
+        assert not data_store.is_synced("2025-01-06", "option_month", ticker="TQQQ")
         assert data_store.is_synced("2025-01-06", "equity")
 
 
@@ -691,3 +692,51 @@ def test_backfill_idempotent(tmp_db, tmp_path):
     count = con.execute("SELECT COUNT(*) FROM option_bars").fetchone()[0]
     con.close()
     assert count == 1
+
+
+# ── sync_log ticker 维度 ─────────────────────────────────────
+
+def test_is_synced_with_ticker(tmp_db):
+    """sync_log 带 ticker 时只匹配对应 ticker。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.write_sync_log("2026-03-01", "option_month", 1000, "ok",
+                                  ticker="TQQQ")
+        assert data_store.is_synced("2026-03-01", "option_month", ticker="TQQQ")
+        assert not data_store.is_synced("2026-03-01", "option_month", ticker="QQQ")
+
+
+def test_is_synced_without_ticker_backward_compat(tmp_db):
+    """不传 ticker 时保持原行为（向后兼容）。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.write_sync_log("2026-03-01", "option_month", 1000, "ok")
+        assert data_store.is_synced("2026-03-01", "option_month")
+
+
+def test_get_latest_equity_date_per_ticker(tmp_db):
+    """per-ticker 查询各自的最新日期。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.upsert_equity_bars([
+            {"date": "2026-04-01", "ticker": "TQQQ", "open": 50.0,
+             "high": 52.0, "low": 49.0, "close": 51.0,
+             "volume": 100000, "vwap": 50.5, "transactions": 500},
+            {"date": "2026-03-15", "ticker": "QQQ", "open": 450.0,
+             "high": 455.0, "low": 448.0, "close": 452.0,
+             "volume": 200000, "vwap": 451.0, "transactions": 1000},
+        ])
+        assert data_store.get_latest_equity_date("TQQQ") == "2026-04-01"
+        assert data_store.get_latest_equity_date("QQQ") == "2026-03-15"
+        assert data_store.get_latest_equity_date("SPY") is None
+
+
+def test_delete_ticker_data_only_clears_target_sync_log(tmp_db):
+    """delete_ticker_data 只清指定 ticker 的 option_month sync_log，不影响其他 ticker。"""
+    with patch.object(data_store, "DB_PATH", tmp_db):
+        data_store.write_sync_log("2026-03-01", "option_month", 5000, "ok",
+                                  ticker="TQQQ")
+        data_store.write_sync_log("2026-03-01", "option_month", 3000, "ok",
+                                  ticker="QQQ")
+        data_store.delete_ticker_data("TQQQ")
+        # TQQQ 的 sync_log 应被清除
+        assert not data_store.is_synced("2026-03-01", "option_month", ticker="TQQQ")
+        # QQQ 的 sync_log 应保留
+        assert data_store.is_synced("2026-03-01", "option_month", ticker="QQQ")

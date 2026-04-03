@@ -170,3 +170,24 @@ def test_download_and_store_day_ticker_filter(tmp_path):
     symbol = con.execute("SELECT symbol FROM option_bars").fetchone()[0]
     con.close()
     assert "TQQQ" in symbol
+
+
+def test_sync_options_new_ticker_not_skipped(tmp_path):
+    """TQQQ 已同步的月份，新增 QQQ 时该月不应被跳过。"""
+    db_path = tmp_path / "test.duckdb"
+    with patch.object(data_store, "DB_PATH", db_path):
+        data_store.init_db()
+        # 模拟 TQQQ 已同步 2026-03
+        data_store.write_sync_log("2026-03-01", "option_month", 5000, "ok",
+                                  ticker="TQQQ")
+
+        with patch("s3_downloader._download_day_file") as mock_dl, \
+             patch("data_store.insert_option_bars_from_csv", return_value=100):
+            mock_dl.return_value = tmp_path / "fake.csv.gz"
+            s3_downloader.sync_options(
+                "2026-03-01", "2026-03-31", tickers=["TQQQ", "QQQ"])
+
+        # QQQ 该月应被处理并标记
+        assert data_store.is_synced("2026-03-01", "option_month", ticker="QQQ")
+        # TQQQ 之前已标记，仍然是 synced
+        assert data_store.is_synced("2026-03-01", "option_month", ticker="TQQQ")

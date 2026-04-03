@@ -472,7 +472,7 @@ class TestComputeLatest:
         result = compute_latest(weekly_rows, daily_df)
         assert "strikes" in result
         assert result["strikes"]["A"] == pytest.approx(90.0, abs=0.01)
-        assert result["strikes"]["C2"] == pytest.approx(80.0, abs=0.01)  # 20% OTM
+        assert result["strikes"]["C2"] == pytest.approx(90.0, abs=0.01)  # 10% OTM
 
     def test_expiry_date_is_trading_day(self):
         """到期日为字符串格式的美股交易日"""
@@ -528,21 +528,21 @@ class TestGetOtmForTicker:
         result = get_otm_for_ticker("TQQQ")
         assert result == _expected_otm(3)
         assert result["A"] == 0.10
-        assert result["C2"] == 0.20
+        assert result["C2"] == 0.10
 
     def test_2x_qld(self):
         """QLD 2倍杠杆"""
         result = get_otm_for_ticker("QLD")
         assert result == _expected_otm(2)
         assert result["A"] == 0.06
-        assert result["C2"] == 0.13  # floor(20 * 2 / 3) = 13
+        assert result["C2"] == 0.06  # floor(10 * 2 / 3) = 6
 
     def test_1x_qqq(self):
         """QQQ 普通股票"""
         result = get_otm_for_ticker("QQQ")
         assert result == _expected_otm(1)
         assert result["A"] == 0.03
-        assert result["C2"] == 0.06  # floor(20 * 1 / 3) = 6
+        assert result["C2"] == 0.03  # floor(10 * 1 / 3) = 3
 
     def test_unknown_ticker(self):
         """未知标的默认 1 倍"""

@@ -73,7 +73,7 @@ def sync_options(from_date: str, to_date: str,
                  s3_client=None) -> None:
     """同步指定日期范围内的期权数据（按月粒度）。
 
-    外层按月迭代，月级 sync_log 跳过已完成的月份。
+    外层按月迭代，月级 sync_log 按 ticker 跳过已完成的月份。
     月内使用下载线程 + 写入主线程流水线并行处理。
     已缓存到 output/flat_files_cache/ 的文件直接读取，无需重新下载。
 
@@ -96,9 +96,20 @@ def sync_options(from_date: str, to_date: str,
 
     for year, month in trading_months(from_date, to_date):
         month_key = f"{year}-{month:02d}-01"
-        if data_store.is_synced(month_key, "option_month"):
-            logger.debug(f"[s3] {year}-{month:02d} 已同步，跳过")
-            continue
+
+        # 确定本月需要同步的 ticker（排除已同步的）
+        if tickers:
+            pending = [t for t in tickers
+                       if not data_store.is_synced(month_key, "option_month",
+                                                   ticker=t)]
+            if not pending:
+                logger.debug(f"[s3] {year}-{month:02d} 所有标的已同步，跳过")
+                continue
+        else:
+            if data_store.is_synced(month_key, "option_month"):
+                logger.debug(f"[s3] {year}-{month:02d} 已同步，跳过")
+                continue
+            pending = None
 
         last_day = calendar.monthrange(year, month)[1]
         month_start = max(from_date, f"{year}-{month:02d}-01")
@@ -107,7 +118,8 @@ def sync_options(from_date: str, to_date: str,
         if not days:
             continue
 
-        logger.info(f"[s3] 处理 {year}-{month:02d}，共 {len(days)} 个交易日")
+        logger.info(f"[s3] 处理 {year}-{month:02d}，共 {len(days)} 个交易日"
+                     + (f"，待同步标的: {pending}" if pending else ""))
 
         q = queue.Queue(maxsize=3)
         total_written = 0
@@ -134,7 +146,7 @@ def sync_options(from_date: str, to_date: str,
             if cache_path is not None:
                 try:
                     written = data_store.insert_option_bars_from_csv(
-                        cache_path, date_str, tickers
+                        cache_path, date_str, pending
                     )
                     total_written += written
                     logger.info(f"[s3] {date_str}: {written:,} 行写入 option_bars")
@@ -146,6 +158,14 @@ def sync_options(from_date: str, to_date: str,
 
         status = "ok" if month_ok else "error"
         msg = None if month_ok else "部分天写入失败"
-        data_store.write_sync_log(month_key, "option_month", total_written, status, msg)
+        if pending is not None:
+            # 按 ticker 分别写入 sync_log，便于后续增量判断
+            for ticker_name in pending:
+                data_store.write_sync_log(month_key, "option_month",
+                                          total_written, status, msg,
+                                          ticker=ticker_name)
+        else:
+            data_store.write_sync_log(month_key, "option_month",
+                                      total_written, status, msg)
         if month_ok:
             logger.info(f"[s3] {year}-{month:02d} 完成，共 {total_written:,} 行")

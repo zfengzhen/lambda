@@ -27,8 +27,8 @@ def ensure_synced(tickers: list[str], api_key: str) -> None:
     流程：
     1. 同步 splits 表，检测新拆股事件
     2. 有新拆股 → 清空该 ticker 数据（触发全量重拉）
-    3. 同步 equity_bars（adjusted=true）
-    4. 同步 option_bars（入库时按因子调整）
+    3. 同步 equity_bars（per-ticker 独立计算起始日期）
+    4. 同步 option_bars（per-ticker 月级 sync_log）
     5. 计算 ticker IV（增量/全量）
     """
     data_store.init_db()
@@ -49,23 +49,33 @@ def ensure_synced(tickers: list[str], api_key: str) -> None:
         logger.info(f"[sync] {ticker} 检测到新拆股，清空数据准备全量重拉")
         data_store.delete_ticker_data(ticker)
 
-    # ── 3. 确定同步日期范围 ──
-    latest = data_store.get_latest_synced_date("equity")
-    if need_purge or not latest:
-        from_date = full_sync_from
-    else:
-        from_date = str(datetime.date.fromisoformat(latest)
-                        + datetime.timedelta(days=1))
+    # ── 3. 同步 equity（per-ticker 独立日期范围） ──
+    if tickers and api_key:
+        for ticker in tickers:
+            if ticker in need_purge:
+                eq_from = full_sync_from
+            else:
+                latest = data_store.get_latest_equity_date(ticker)
+                if not latest:
+                    eq_from = full_sync_from
+                else:
+                    eq_from = str(datetime.date.fromisoformat(latest)
+                                  + datetime.timedelta(days=1))
+            if eq_from <= to_date:
+                logger.info(f"[sync] {ticker} equity 同步 {eq_from} ~ {to_date}")
+                rest_downloader.download_and_store_equity(
+                    ticker, eq_from, to_date, api_key)
+            else:
+                logger.info(f"[sync] {ticker} equity 已是最新")
 
-    if from_date <= to_date:
-        logger.info(f"同步 {from_date} ~ {to_date}，标的: {tickers or '全部'}")
-        s3_downloader.sync_options(from_date, to_date, tickers=tickers or None)
-        if tickers and api_key:
-            rest_downloader.sync_equity(tickers, from_date, to_date, api_key)
-    else:
-        logger.info("数据已是最新，无需同步")
+    # ── 4. 同步 option ──
+    if tickers:
+        s3_downloader.sync_options(full_sync_from, to_date,
+                                   tickers=tickers)
+    elif not tickers:
+        s3_downloader.sync_options(full_sync_from, to_date)
 
-    # ── 4. 计算 IV（无论是否同步了新数据） ──
+    # ── 5. 计算 IV ──
     if tickers:
         sync_ticker_iv(tickers)
 
