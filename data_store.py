@@ -679,10 +679,10 @@ def compute_split_factor(ticker: str, date_str: str) -> float:
 
 
 def delete_ticker_data(ticker: str) -> None:
-    """清空指定 ticker 的 equity_bars、option_bars、option_month sync_log 和 ticker_iv。
+    """清空指定 ticker 的 equity_bars、option_bars、该 ticker 的 option_month sync_log 和 ticker_iv。
 
     用于拆股后的全量重拉前清理。
-    sync_log 只清 option_month 记录（期权 CSV 包含所有 ticker，需重新入库以应用新因子）。
+    sync_log 只清目标 ticker 的 option_month 记录，不影响其他 ticker 的同步状态。
     equity 的同步范围由 ensure_synced 的 need_purge 逻辑控制，无需清 sync_log。
     """
     con = _connect()
@@ -692,8 +692,11 @@ def delete_ticker_data(ticker: str) -> None:
             "DELETE FROM option_bars WHERE symbol LIKE ?",
             [f"O:{ticker}%"],
         )
-        # 清 option_month sync_log，强制重新下载并以新因子入库
-        con.execute("DELETE FROM sync_log WHERE data_type = 'option_month'")
+        # 只清目标 ticker 的 option_month sync_log，强制重新下载并以新因子入库
+        con.execute(
+            "DELETE FROM sync_log WHERE data_type = 'option_month' AND ticker = ?",
+            [ticker],
+        )
         con.execute("DELETE FROM ticker_iv WHERE ticker = ?", [ticker])
     finally:
         con.close()
