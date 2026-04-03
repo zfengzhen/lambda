@@ -89,14 +89,19 @@ def enrich_weeks_with_options(ticker: str, weeks: list[dict]):
             occ_date6 = occ[p_idx - 6:p_idx]  # "260402"
             occ_expiry = f"20{occ_date6[0:2]}-{occ_date6[2:4]}-{occ_date6[4:6]}"
             dte = (datetime.strptime(occ_expiry, "%Y-%m-%d") - datetime.strptime(entry, "%Y-%m-%d")).days
-            floor_strike = int(strike)
+            # 从合约 OCC symbol 提取真实 strike（末 8 位，单位千分之一美元）
+            occ_strike = int(occ[-8:]) / 1000.0
+            # 显示 strike：整数显示整数（P50），有小数显示小数（P50.5）
+            occ_strike_str = str(int(occ_strike)) if occ_strike == int(occ_strike) else str(occ_strike)
             premium = round(opt["close"], 2)
-            w["option_symbol"] = f"{ticker} {occ_expiry} P{floor_strike}"
+            w["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike_str}"
             w["option_dte"] = dte
             w["option_price"] = premium
             w["option_vwap"] = round(opt["vwap"], 4)
-            # settle_diff 保留 strategy.py 的原始计算：(expiry_close - strike) / strike
-            # 不用权利金口径覆盖，正数=安全余量，负数=穿透幅度
+            # 用合约真实 strike 重算结算差比和平稳到期
+            if w.get("expiry_close") is not None and occ_strike > 0:
+                w["settle_diff"] = round((w["expiry_close"] - occ_strike) / occ_strike * 100, 2)
+                w["safe_expiry"] = w["settle_diff"] > 0
         else:
             w["option_symbol"] = None
             w["option_dte"] = None
@@ -110,6 +115,10 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         lambda x: compute_hist_vol(pd.Series(x.values), window=20), raw=False
     )
     df["prev_macd"] = df["macd"].shift(1)
+    # 保留完整日线用于迷你日K图（dropna 会丢弃前 ~60 行）
+    full_daily = df[["date", "open", "high", "low", "close"]].copy()
+    full_daily["_date"] = pd.to_datetime(full_daily["date"]).dt.date
+    full_daily = full_daily.sort_values("_date").reset_index(drop=True)
     df = df.dropna(subset=["ma60"]).reset_index(drop=True)
 
     logger.info(f"[{ticker}] 有效数据 {len(df)} 行")
@@ -123,9 +132,34 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
     # 丰富期权数据：查询行权价向下取整的 Put 期权价格
     enrich_weeks_with_options(ticker, weeks)
 
+    # 熔断标记：前 2 周都是 C 类 + 本周也是 C 类时才可能暂停（A/B 类始终放行）
+    #   本周 C 类但非 C3 → 暂停
+    #   本周 C3 且前 2 周含 C3 → 继续卖出（跌势已有减速信号）
+    #   本周 C3 但前 2 周无 C3 → 暂停（纯下杀后首次减速，不够安全）
+    _c_tiers = {"C1", "C2", "C3", "C4"}
+    weeks_asc = sorted(weeks, key=lambda w: w["date"])
+    for i, w in enumerate(weeks_asc):
+        if i >= 2:
+            p1 = weeks_asc[i - 1]["tier"]
+            p2 = weeks_asc[i - 2]["tier"]
+            if p1 in _c_tiers and p2 in _c_tiers and w["tier"] in _c_tiers:
+                if w["tier"] == "C3" and (p1 == "C3" or p2 == "C3"):
+                    w["skip"] = False  # 前2周有C3减速信号，本周C3继续卖出
+                else:
+                    w["skip"] = True
+                    w["skip_reason"] = f"前2周 {p2}→{p1}，本周 {w['tier']}，连续弱势暂停"
+                continue
+        w["skip"] = False
+
     summary = compute_summary(weeks)
     tiers = compute_tiers(weeks, otm=otm)
     latest = compute_latest(weekly_rows, df, otm=otm)
+    # 为 latest 标记熔断状态（取最后 3 周判断）
+    if latest and len(weeks_asc) >= 3:
+        last = weeks_asc[-1]
+        if last.get("skip"):
+            latest["skip"] = True
+            latest["skip_reason"] = last["skip_reason"]
 
     # 为 latest 查询期权合约
     if latest:
@@ -137,11 +171,36 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             p_idx = occ.index("P")
             occ_date6 = occ[p_idx - 6:p_idx]
             occ_expiry = f"20{occ_date6[0:2]}-{occ_date6[2:4]}-{occ_date6[4:6]}"
-            occ_strike = int(occ[-8:]) // 1000
-            latest["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike}"
+            occ_strike = int(occ[-8:]) / 1000.0
+            occ_strike_str = str(int(occ_strike)) if occ_strike == int(occ_strike) else str(occ_strike)
+            latest["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike_str}"
             latest["option_dte"] = (datetime.strptime(occ_expiry, "%Y-%m-%d") - datetime.strptime(latest["date"], "%Y-%m-%d")).days
 
     dates = pd.to_datetime(df["date"])
+
+    # 为每周回测数据附加日K：pre_bars（入场日前20交易日+入场日）+ post_bars（入场日后到到期日）
+    # 使用 full_daily（dropna 前的完整日线），避免早期数据因 MA60 预热被截断
+    def _ohlc(r):
+        return {"o": round(r["open"], 2), "h": round(r["high"], 2),
+                "l": round(r["low"], 2), "c": round(r["close"], 2)}
+    for w in weeks:
+        entry = datetime.strptime(w["date"], "%Y-%m-%d").date() if isinstance(w["date"], str) else w["date"]
+        expiry = datetime.strptime(w["expiry_date"], "%Y-%m-%d").date() if isinstance(w["expiry_date"], str) else w["expiry_date"]
+        # 入场日及之前 20 个交易日
+        pre = full_daily[full_daily["_date"] <= entry].tail(21)
+        # 入场日之后到到期日
+        post = full_daily[(full_daily["_date"] > entry) & (full_daily["_date"] <= expiry)]
+        w["pre_bars"] = [_ohlc(r) for _, r in pre.iterrows()]
+        w["post_bars"] = [_ohlc(r) for _, r in post.iterrows()]
+
+    # 查询 IV 数据，建立日期→IV 映射
+    iv_rows = data_store.query_ticker_iv(
+        ticker, dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d"))
+    iv_by_date = {r["date"]: round(r["iv"] * 100, 1) for r in iv_rows}
+
+    # 为每周回测数据附加入场日 IV
+    for w in weeks:
+        w["iv"] = iv_by_date.get(w["date"])
 
     # 最近 30 个交易日的日K + MACD + MA，供 HTML 图表使用
     # MA5/MA10/MA20/MA60 已由 add_ma() 在完整 df 上计算完成，tail(30) 直接取值即可
@@ -163,6 +222,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             "ma20": round(row["ma20"], 2) if pd.notna(row.get("ma20")) else None,
             "ma60": round(row["ma60"], 2) if pd.notna(row.get("ma60")) else None,
             "vol_ma20": round(row["vol_ma20"], 0) if pd.notna(row.get("vol_ma20")) else None,
+            "iv": iv_by_date.get(row["date"]),
         }
         for _, row in recent.iterrows()
     ]

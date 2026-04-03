@@ -257,16 +257,16 @@ class TestBacktestWeeks:
             assert r["tier"] in ("A", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4")
 
     def test_backtest_new_fields(self, scenario):
-        """回测结果包含 settle_diff / safe_expiry / pct_change / period_low / low_vs_strike"""
+        """回测结果包含 settle_diff / safe_expiry，已移除的展示字段不应存在"""
         weekly_rows, daily_df = scenario
         result = backtest_weeks(weekly_rows, daily_df)
         for r in result:
-            assert "pct_change" in r
-            assert "period_low" in r
-            assert "low_vs_strike" in r
             assert "settle_diff" in r
             assert "safe_expiry" in r
-            # 旧字段不应存在
+            # 已移除的字段不应存在
+            assert "pct_change" not in r
+            assert "period_low" not in r
+            assert "low_vs_strike" not in r
             assert "prem_pct" not in r
             assert "pnl_pct" not in r
             assert "cum_pnl" not in r
@@ -385,8 +385,8 @@ class TestComputeTiers:
 
     def test_tier_otm_values(self):
         result = compute_tiers(self._make_weeks())
-        assert result["A"]["otm"] == 10
-        assert result["B1"]["otm"] == 10
+        assert result["A"]["otm"] == 8
+        assert result["B1"]["otm"] == 8
 
     def test_pending_excluded_from_settled(self):
         """pending 周不计入 settled"""
@@ -471,8 +471,8 @@ class TestComputeLatest:
         weekly_rows, daily_df = self._make_inputs(tier_close=100.0)
         result = compute_latest(weekly_rows, daily_df)
         assert "strikes" in result
-        assert result["strikes"]["A"] == pytest.approx(90.0, abs=0.01)
-        assert result["strikes"]["C2"] == pytest.approx(90.0, abs=0.01)  # 10% OTM
+        assert result["strikes"]["A"] == pytest.approx(92.0, abs=0.01)   # 8% OTM
+        assert result["strikes"]["C2"] == pytest.approx(85.0, abs=0.01)  # 15% OTM
 
     def test_expiry_date_is_trading_day(self):
         """到期日为字符串格式的美股交易日"""
@@ -505,8 +505,8 @@ class TestComputeLatest:
         )
         result = compute_latest(weekly_rows, daily_df)
         assert result["tier"] == "B1"
-        assert result["strikes"]["A"] == pytest.approx(95.0 * 0.90, abs=0.01)
-        assert result["strikes"]["B1"] == pytest.approx(95.0 * 0.90, abs=0.01)
+        assert result["strikes"]["A"] == pytest.approx(95.0 * 0.92, abs=0.01)   # 8% OTM
+        assert result["strikes"]["B1"] == pytest.approx(95.0 * 0.92, abs=0.01)  # 8% OTM
 
 
 # ---------------------------------------------------------------------------
@@ -527,22 +527,22 @@ class TestGetOtmForTicker:
         """TQQQ 3倍杠杆 → 基准值不变"""
         result = get_otm_for_ticker("TQQQ")
         assert result == _expected_otm(3)
-        assert result["A"] == 0.10
-        assert result["C2"] == 0.10
+        assert result["A"] == 0.08
+        assert result["C2"] == 0.15
 
     def test_2x_qld(self):
         """QLD 2倍杠杆"""
         result = get_otm_for_ticker("QLD")
         assert result == _expected_otm(2)
-        assert result["A"] == 0.06
-        assert result["C2"] == 0.06  # floor(10 * 2 / 3) = 6
+        assert result["A"] == 0.05   # floor(8 * 2 / 3) = 5
+        assert result["C2"] == 0.10  # floor(15 * 2 / 3) = 10
 
     def test_1x_qqq(self):
         """QQQ 普通股票"""
         result = get_otm_for_ticker("QQQ")
         assert result == _expected_otm(1)
-        assert result["A"] == 0.03
-        assert result["C2"] == 0.03  # floor(10 * 1 / 3) = 3
+        assert result["A"] == 0.02   # floor(8 * 1 / 3) = 2
+        assert result["C2"] == 0.05  # floor(15 * 1 / 3) = 5
 
     def test_unknown_ticker(self):
         """未知标的默认 1 倍"""
