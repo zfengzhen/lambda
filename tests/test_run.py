@@ -1,4 +1,6 @@
 """run.py 单元测试"""
+import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -63,3 +65,21 @@ class TestEmbedToHtml:
         html_content = (tmp_path / "TQQQ.html").read_text()
         assert "daily_bars" in html_content
         assert '"summary"' in html_content
+
+
+class TestMarketField:
+    """market 行情快照字段"""
+
+    def test_market_field_from_json(self):
+        """已生成的 JSON 应包含 market 字段且涨跌幅计算正确。"""
+        json_path = os.path.join(os.path.dirname(__file__), "..", "output", "TQQQ.json")
+        if not os.path.exists(json_path):
+            pytest.skip("TQQQ.json 不存在，需先运行 run.py")
+        with open(json_path) as f:
+            result = json.load(f)
+        m = result.get("market")
+        assert m is not None, "market 字段缺失"
+        for key in ("date", "close", "change_pct"):
+            assert key in m, f"market 缺少 {key}"
+        # change_pct 应为合理范围内的浮点数
+        assert isinstance(m["change_pct"], (int, float))

@@ -80,6 +80,14 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
 .bar{display:inline-block;height:5px;border-radius:3px;vertical-align:middle}
 .bar-g{background:linear-gradient(90deg,#2e7d32,#4caf50)}.bar-r{background:linear-gradient(90deg,#c62828,#ef5350)}
 .cum-bar{display:inline-block;height:14px;background:linear-gradient(90deg,#1565c0,#4fc3f7);border-radius:3px;vertical-align:middle;min-width:2px}
+/* 行情快照条 */
+.market-bar{margin-bottom:6px;background:#141b2d;border:1px solid #253044;border-radius:8px}
+.market-bar .mk-price{font-size:22px;font-weight:bold;color:#e8ecf1}
+.market-bar .mk-change{font-size:15px;font-weight:bold;margin-left:4px}
+.market-bar .mk-up{color:#22c55e}.market-bar .mk-down{color:#ef4444}
+.market-bar .mk-item{font-size:12px;color:#8b95a5}
+.market-bar .mk-item .mk-val{color:#c8d0dc;font-weight:600;margin-left:3px}
+.market-bar .mk-date{font-size:17px;font-weight:bold;color:#4fc3f7;margin-right:4px}
 .safe{color:#4caf50}.danger{color:#ff9800}
 
 /* 过滤标签 */
@@ -127,30 +135,26 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
   <!-- 统计+层级一行 -->
   <div class="overview-row" id="overviewRow"></div>
 
-  <!-- 决策面板：左=最新决策，右=日K+MACD图表 -->
-  <div class="box">
-    <div class="decision-grid">
-      <div id="latestDecision"></div>
-      <div class="chart-panel">
-        <div class="chart-wrap">
-          <div class="chart-legend" id="klineLegend">
-            <span class="chart-legend-title">日K (30天)</span>
-          </div>
-          <div id="klineChart"></div>
-        </div>
-        <div class="chart-wrap">
-          <div class="chart-legend" id="macdLegend">
-            <span class="chart-legend-title">MACD</span>
-          </div>
-          <div id="macdChart"></div>
-        </div>
-        <div class="chart-wrap">
-          <div class="chart-legend" id="ivLegend">
-            <span class="chart-legend-title">IV (30天)</span>
-          </div>
-          <div id="ivChart"></div>
-        </div>
+  <!-- 行情快照+图表 -->
+  <div class="chart-panel">
+    <div class="market-bar" id="marketBar"></div>
+    <div class="chart-wrap">
+      <div class="chart-legend" id="klineLegend">
+        <span class="chart-legend-title">日K (60天)</span>
       </div>
+      <div id="klineChart"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-legend" id="macdLegend">
+        <span class="chart-legend-title">MACD</span>
+      </div>
+      <div id="macdChart"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-legend" id="ivLegend">
+        <span class="chart-legend-title">IV (60天)</span>
+      </div>
+      <div id="ivChart"></div>
     </div>
   </div>
 
@@ -278,8 +282,7 @@ function buildDecisionHtml(data, title) {
   const tierLabel = `${data.tier} ${TIER_NAMES[data.tier] || ''}`;
 
   return `
-    <h3 style="color:#8b95a5">${title} <span style="color:#4fc3f7">${data.date}</span></h3>
-    <div style="background:#141b2d;border:1px solid #253044;border-radius:8px;padding:16px;margin-top:14px">
+    <div style="background:#141b2d;border:1px solid #253044;border-radius:8px;padding:16px">
       <div style="font-size:14px;margin-bottom:14px">
         <span style="color:#8b95a5">收盘价</span>
         <span style="color:#e8ecf1;font-size:22px;font-weight:bold;margin-left:8px">${fmt(close)}</span>
@@ -337,8 +340,61 @@ function buildDecisionHtml(data, title) {
 }
 
 /* ===== 渲染：最新决策 ===== */
-function renderDecision(latest, otm) {
-  document.getElementById('latestDecision').innerHTML = buildDecisionHtml(latest, '决策');
+
+/* ===== 渲染：行情快照条 ===== */
+function renderMarketBar(market) {
+  const el = document.getElementById('marketBar');
+  if (!market || !el) { if (el) el.style.display = 'none'; return; }
+  const up = market.change_pct >= 0;
+  const cls = up ? 'mk-up' : 'mk-down';
+  const sign = up ? '+' : '';
+  // 所有进行中的合约：表格展示
+  let contractHtml = '';
+  const contracts = market.active_contracts || [];
+  if (contracts.length > 0) {
+    const today = new Date();
+    const td = 'padding:5px 8px;border-bottom:1px solid #1a2332';
+    const rows = contracts.map((c, i) => {
+      const expiry = new Date(c.expiry + 'T00:00:00');
+      const dte = Math.max(0, Math.ceil((expiry - today) / 86400000));
+      const strikeDiff = ((market.close - c.strike) / c.strike * 100);
+      const sCls = strikeDiff >= 0 ? 'mk-up' : 'mk-down';
+      const sSign = strikeDiff >= 0 ? '+' : '';
+      const tc = TIER_COLORS[c.tier] || {color:'#8b95a5', bg:'transparent'};
+      const rowBg = i === 0 ? 'background:rgba(79,195,247,0.08)' : '';
+      return `<tr style="${rowBg}">
+        <td style="${td};text-align:left;padding-left:14px;color:#c8d0dc;font-weight:bold">${c.date}</td>
+        <td style="${td};text-align:center"><span style="color:${tc.color};border:1px solid ${tc.color};border-radius:4px;padding:1px 6px;font-size:11px;font-weight:bold">${c.tier} ${c.otm}%</span> <span style="color:${tc.color};font-size:11px">${TIER_NAMES[c.tier] || ''}</span></td>
+        <td style="${td};text-align:left;color:#4fc3f7;font-weight:bold">${c.symbol}</td>
+        <td style="${td};text-align:right;color:#ce93d8;font-weight:bold">${c.price != null ? '$' + c.price.toFixed(2) : '-'}</td>
+        <td style="${td};text-align:right;color:#ffc107">${dte}</td>
+        <td style="${td};text-align:center">${miniCandles(c.pre_bars || [], c.post_bars || [])}</td>
+        <td class="${sCls}" style="${td};text-align:right;font-weight:bold;padding-right:14px">${sSign}${strikeDiff.toFixed(2)}%</td>
+      </tr>`;
+    }).join('');
+    const th = 'padding:4px 8px;border-bottom:1px solid #253044';
+    contractHtml = `
+    <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:6px">
+      <thead><tr style="color:#546e7a;font-size:11px">
+        <th style="${th};text-align:left;padding-left:14px">日期</th>
+        <th style="${th};text-align:center">层级</th>
+        <th style="${th};text-align:left">合约</th>
+        <th style="${th};text-align:right">权利金</th>
+        <th style="${th};text-align:right">DTE</th>
+        <th style="${th};text-align:center">日K</th>
+        <th style="${th};text-align:right;padding-right:14px">涨跌幅</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+  el.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:20px;padding:10px 14px">
+      <span class="mk-date">${market.date}</span>
+      <span class="mk-item">收盘价</span>
+      <span class="mk-price">${market.close.toFixed(2)}</span>
+      <span class="mk-change ${cls}">${sign}${market.change_pct.toFixed(2)}%</span>
+      ${market.iv != null ? `<span class="mk-item">IV <span class="mk-val" style="color:#ce93d8;font-weight:bold">${market.iv.toFixed(1)}%</span></span>` : ''}
+    </div>${contractHtml}`;
 }
 
 /* ===== 渲染：日K + MACD 图表（lightweight-charts） ===== */
@@ -362,6 +418,8 @@ function renderCharts(dailyBars) {
     layout: { background: { color: '#141b2d' }, textColor: '#8b95a5', fontSize: 11, attributionLogo: false },
     grid: { vertLines: { color: '#1e2a3a' }, horzLines: { color: '#1e2a3a' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: false,
+    handleScale: false,
     timeScale: {
       borderColor: '#253044', timeVisible: false, rightOffset: 1,
       fixLeftEdge: true, fixRightEdge: true,
@@ -518,12 +576,15 @@ function renderCharts(dailyBars) {
   // ---- 图例更新函数 ----
   // 按日期索引数据，方便查找
   const barByDate = {};
-  dailyBars.forEach(b => { barByDate[b.date] = b; });
+  const prevBarByDate = {};
+  dailyBars.forEach((b, i) => { barByDate[b.date] = b; if (i > 0) prevBarByDate[b.date] = dailyBars[i - 1]; });
   const lastBar = dailyBars[dailyBars.length - 1];
 
   function updateKlineLegend(bar) {
     if (!bar) return;
-    const chg = bar.open ? ((bar.close - bar.open) / bar.open * 100) : 0;
+    // 日涨跌幅：vs 前一日收盘
+    const prev = prevBarByDate[bar.date];
+    const chg = prev ? ((bar.close - prev.close) / prev.close * 100) : 0;
     const chgColor = chg >= 0 ? '#4caf50' : '#ef5350';
     const chgSign = chg >= 0 ? '+' : '';
     const ma5 = bar.ma5 != null ? bar.ma5.toFixed(2) : '-';
@@ -685,28 +746,29 @@ function miniCandles(preBars, postBars) {
   const pre = preBars || [], post = postBars || [];
   const all = [...pre, ...post];
   const gap = 1, bw = 2, sepW = 3;
-  const nPre = pre.length, nPost = post.length;
-  const W = (nPre + nPost) * (bw + gap) + gap + sepW;
+  const maxPre = 21, maxPost = 20; // 固定槽位：左21根 + 右20根
+  const fixedW = (maxPre + maxPost) * (bw + gap) + gap + sepW;
   const H = 28, pad = 2;
   const allHL = all.flatMap(b => [b.h, b.l]);
   const hi = Math.max(...allHL), lo = Math.min(...allHL);
   const range = hi - lo || 1;
   const y = v => pad + (hi - v) / range * (H - pad * 2);
-  let svg = `<svg width="${W}" height="${H}" style="vertical-align:middle">`;
-  // 左侧：入场前20天 + 入场日
+  let svg = `<svg width="${fixedW}" height="${H}" style="vertical-align:middle">`;
+  // 左侧：右对齐到分隔线，不足的左侧留空
+  const preOffset = (maxPre - pre.length) * (bw + gap);
   pre.forEach((b, i) => {
-    const x = gap + i * (bw + gap);
+    const x = gap + preOffset + i * (bw + gap);
     const cx = x + bw / 2;
     const color = b.c >= b.o ? '#4caf50' : '#ef5350';
     const bodyTop = y(Math.max(b.o, b.c)), bodyBot = y(Math.min(b.o, b.c));
     svg += `<line x1="${cx}" y1="${y(b.h)}" x2="${cx}" y2="${y(b.l)}" stroke="${color}" stroke-width="1"/>`;
     svg += `<rect x="${x}" y="${bodyTop}" width="${bw}" height="${Math.max(bodyBot - bodyTop, 1)}" fill="${color}" rx="0.5"/>`;
   });
-  // 分隔竖线
-  const sepX = gap + nPre * (bw + gap) + sepW / 2;
+  // 分隔竖线：固定位置
+  const sepX = gap + maxPre * (bw + gap) + sepW / 2;
   svg += `<line x1="${sepX}" y1="0" x2="${sepX}" y2="${H}" stroke="#5c6bc0" stroke-width="1" stroke-dasharray="2,2"/>`;
-  // 右侧：入场后到到期日
-  const postOffset = gap + nPre * (bw + gap) + sepW;
+  // 右侧：左对齐从分隔线开始
+  const postOffset = gap + maxPre * (bw + gap) + sepW;
   post.forEach((b, i) => {
     const x = postOffset + i * (bw + gap);
     const cx = x + bw / 2;
@@ -882,7 +944,7 @@ function renderData(data) {
   document.getElementById('tickerName').textContent = data.ticker || '';
   const otm = data.otm_config || {otm_a: 0.10, otm_b: 0.10, otm_c: 0.10};
   renderOverview(data.summary, data.tiers);
-  renderDecision(data.latest, otm);
+  renderMarketBar(data.market);
   renderFilter();
   renderTable(data.weeks);
   // 渲染图表（等 lightweight-charts 加载完成）
@@ -919,8 +981,8 @@ function exportPng() {
 
   tmp.appendChild(document.getElementById('overviewRow').cloneNode(true));
 
-  const box = document.querySelector('.box');
-  tmp.appendChild(box.cloneNode(true));
+  const grid = document.querySelector('.decision-grid');
+  tmp.appendChild(grid.cloneNode(true));
 
   const label = document.createElement('div');
   label.style.cssText = 'color:#8b95a5;font-size:14px;margin:16px 0 8px';

@@ -44,7 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **策略报告（run.py）：**
 ```
-ensure_synced() → DuckDB equity_bars → 指标计算 → 策略计算 → JSON(output/) → HTML
+ensure_synced() → DuckDB equity_bars → 指标计算 → 策略计算 → JSON(output/, 含 market 行情快照) → HTML
 ```
 
 **本地数据库（data_sync.py）：**
@@ -133,6 +133,11 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。OCC strike 判定为平稳到期时，同步清除 `recovery_days` 和 `recovery_gap`，避免策略 strike 与 OCC strike 微小差异导致残留。
 - **期权合约向下匹配**：`query_option_on_date` 取 strike ≤ 策略目标值且最接近的合约，确保实际 OTM ≥ 策略要求。当合约 strike 间距较大（如 TQQQ $5 间距）时，实际 OTM 可能显著大于策略值。
 - **EXPIRY_WEEKS = 4**：到期周数为 4 周（原为 3 周）。`find_expiry_date` 基于 NYSE 交易日历向前推 4 周取最近的周五。
+- **market 行情快照字段**：`run.py` 输出 JSON 的 `market` 包含最新收盘价、日涨跌幅（vs 前一日收盘）、IV，以及 `active_contracts`（所有 pending 且未 skip 的合约）。合约的 `pre_bars`/`post_bars` 复用 weeks 中的数据，用于 mini 日K 渲染。
+- **daily_bars 为 60 个交易日**：`df.tail(60)` 取最近 60 天数据供日K/MACD/IV 图表使用。
+- **template.html 无决策面板**：决策规则展示已移至逐行悬浮面板（`buildDecisionHtml` + tooltip），主页面为行情快照条 + 合约表格 + 全宽图表。
+- **miniCandles 固定槽位**：`miniCandles` 使用固定宽度（左 21 根 + 右 20 根），pre_bars 右对齐到分隔线，确保所有行的竖线居中对齐。修改槽位数需同步调整 `maxPre`/`maxPost`。
+- **latest 含 option_strike/option_expiry**：`run.py` 在查询 latest 合约时同步写入 OCC 真实 strike 数值和到期日，供 `market.active_contracts` 使用。
 
 ## 开发与提交规范
 
