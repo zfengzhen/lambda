@@ -193,6 +193,8 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             latest["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike_str}"
             latest["option_dte"] = (datetime.strptime(occ_expiry, "%Y-%m-%d") - datetime.strptime(latest["date"], "%Y-%m-%d")).days
             latest["option_price"] = round(lt_opt["close"], 2)
+            latest["option_strike"] = occ_strike
+            latest["option_expiry"] = occ_expiry
 
     dates = pd.to_datetime(df["date"])
 
@@ -221,9 +223,9 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         w["iv"] = iv_by_date.get(w["date"])
 
     # 最近 30 个交易日的日K + MACD + MA，供 HTML 图表使用
-    # MA5/MA10/MA20/MA60 已由 add_ma() 在完整 df 上计算完成，tail(30) 直接取值即可
+    # MA5/MA10/MA20/MA60 已由 add_ma() 在完整 df 上计算完成，tail(60) 直接取值即可
     df["vol_ma20"] = df["volume"].rolling(window=20, min_periods=20).mean()
-    recent = df.tail(30)
+    recent = df.tail(60)
     daily_bars = [
         {
             "date": row["date"],
@@ -245,6 +247,60 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         for _, row in recent.iterrows()
     ]
 
+    # 行情快照：最新交易日数据 + 日涨跌幅
+    last_bar = daily_bars[-1] if daily_bars else {}
+    prev_bar = daily_bars[-2] if len(daily_bars) >= 2 else {}
+    if last_bar and prev_bar:
+        prev_close = prev_bar["close"]
+        market = {
+            "date": last_bar["date"],
+            "close": last_bar["close"],
+            "change_pct": round((last_bar["close"] - prev_close) / prev_close * 100, 2),
+            "iv": last_bar.get("iv"),
+        }
+        # 收集所有进行中的合约（pending 且有期权数据），按日期从新到旧
+        active_contracts = []
+        for w in sorted(weeks, key=lambda x: x["date"], reverse=True):
+            if w.get("pending") and w.get("option_symbol") and not w.get("skip"):
+                # 从 option_symbol 提取 strike（P 后面的数字）
+                sym = w["option_symbol"]
+                p_idx = sym.rindex("P")
+                strike_val = float(sym[p_idx + 1:])
+                active_contracts.append({
+                    "date": w["date"],
+                    "tier": w["tier"],
+                    "otm": w.get("otm"),
+                    "symbol": w["option_symbol"],
+                    "price": w.get("option_price"),
+                    "strike": strike_val,
+                    "expiry": w.get("expiry_date"),
+                    "pre_bars": w.get("pre_bars", []),
+                    "post_bars": w.get("post_bars", []),
+                })
+        # latest 的合约也加入（如果还没在列表中）
+        if latest and latest.get("option_symbol"):
+            latest_sym = latest["option_symbol"]
+            if not any(c["symbol"] == latest_sym for c in active_contracts):
+                sym = latest_sym
+                p_idx = sym.rindex("P")
+                strike_val = float(sym[p_idx + 1:])
+                # 从 weeks 中查找同日期的 pre_bars/post_bars
+                matched_w = next((w for w in weeks if w["date"] == latest.get("date")), {})
+                active_contracts.insert(0, {
+                    "date": latest.get("date"),
+                    "tier": latest.get("tier"),
+                    "otm": latest.get("otm"),
+                    "symbol": latest_sym,
+                    "price": latest.get("option_price"),
+                    "strike": strike_val,
+                    "expiry": latest.get("option_expiry"),
+                    "pre_bars": matched_w.get("pre_bars", []),
+                    "post_bars": matched_w.get("post_bars", []),
+                })
+        market["active_contracts"] = active_contracts
+    else:
+        market = None
+
     return {
         "ticker": ticker,
         "generated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
@@ -255,6 +311,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         "latest": latest,
         "weeks": weeks,
         "daily_bars": daily_bars,
+        "market": market,
     }
 
 
