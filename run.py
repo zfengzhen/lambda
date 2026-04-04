@@ -1,12 +1,11 @@
 """
-入口脚本：同步数据 → 策略计算 → 输出 JSON → 内嵌到 HTML → 截图 PNG
+入口脚本：同步数据 → 策略计算 → 输出 JSON → 内嵌到 HTML
 
 用法:
     python run.py              # 默认 TQQQ
     python run.py TQQQ QQQ    # 多标的批量运行
 """
 import argparse
-import base64
 import json
 import logging
 import os
@@ -297,121 +296,6 @@ def embed_to_html(ticker: str, result: dict, template_html: str):
     logger.info(f"[{ticker}] HTML 已生成: {html_path}")
 
 
-def capture_screenshot(ticker: str, result: dict | None):
-    """用 Playwright 截图生成 PNG。缺失时跳过。"""
-    if result is None or not isinstance(result.get("latest"), dict):
-        logger.info("无策略结果，跳过截图")
-        return
-    # 截图按最新有数据的日期命名
-    date_str = result.get("data_range", [None, None])[1]
-    if not date_str:
-        date_str = result["latest"].get("date")
-    if not date_str:
-        logger.warning("[截图] 无法确定数据日期，跳过截图")
-        return
-
-    html_path = os.path.join(OUTPUT_DIR, f"{ticker}.html")
-    if not os.path.exists(html_path):
-        logger.warning(f"{ticker}.html 不存在，跳过截图")
-        return
-
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        logger.warning("[截图] playwright 未安装，跳过。请运行: pip install playwright")
-        return
-
-    png_name = f"lambda-strategy-{ticker}-{date_str}.png"
-    png_path = os.path.join(OUTPUT_DIR, png_name)
-    file_url = "file://" + os.path.abspath(html_path)
-
-    export_js = """
-    () => new Promise((resolve, reject) => {
-        let waited = 0;
-        const waitCanvas = setInterval(() => {
-            if (typeof html2canvas !== 'undefined') {
-                clearInterval(waitCanvas);
-                doExport();
-            } else if (waited > 5000) {
-                clearInterval(waitCanvas);
-                reject(new Error('html2canvas 加载超时'));
-            }
-            waited += 100;
-        }, 100);
-
-        function doExport() {
-            const ticker = document.getElementById('tickerName').textContent || 'TQQQ';
-            const tmp = document.createElement('div');
-            tmp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1500px;background:#0a0e17;padding:20px;color:#c8d0dc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6';
-
-            const headerHtml = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
-                <span style="color:#e8ecf1;font-size:26px;font-weight:bold">Lambda 策略系统</span>
-                <span style="color:#4fc3f7;font-size:20px;font-weight:bold">${ticker}</span>
-            </div>`;
-            tmp.innerHTML = headerHtml;
-            tmp.appendChild(document.getElementById('overviewRow').cloneNode(true));
-
-            const box = document.querySelector('.box');
-            tmp.appendChild(box.cloneNode(true));
-
-            const label = document.createElement('div');
-            label.style.cssText = 'color:#8b95a5;font-size:14px;margin:16px 0 8px';
-            label.textContent = '最近 8 周操作明细';
-            tmp.appendChild(label);
-
-            const tableWrap = document.createElement('div');
-            const origTable = document.querySelector('table.weekly');
-            const tbl = origTable.cloneNode(true);
-            const tbody = tbl.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            rows.forEach((r, i) => { if (i >= 8) r.remove(); });
-            tableWrap.appendChild(tbl);
-            tmp.appendChild(tableWrap);
-
-            tmp.appendChild(document.querySelector('.risk-note').cloneNode(true));
-            document.body.appendChild(tmp);
-
-            html2canvas(tmp, {
-                backgroundColor: '#0a0e17',
-                scale: 2,
-                useCORS: true,
-                width: 1500,
-                windowWidth: 1500,
-            }).then(canvas => {
-                document.body.removeChild(tmp);
-                resolve(canvas.toDataURL('image/png'));
-            }).catch(err => {
-                document.body.removeChild(tmp);
-                reject(err);
-            });
-        }
-    })
-    """
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 1500, "height": 900})
-            page.goto(file_url, wait_until="networkidle")
-            page.wait_for_selector("#overviewRow .stat", timeout=10000)
-            data_url = page.evaluate(export_js)
-
-        header = "data:image/png;base64,"
-        if data_url.startswith(header):
-            img_data = base64.b64decode(data_url[len(header):])
-            with open(png_path, "wb") as f:
-                f.write(img_data)
-            logger.info(f"[截图] 已保存: {png_path}")
-        else:
-            logger.warning("[截图] canvas 返回格式异常")
-    except Exception as e:
-        err_msg = str(e)
-        if "Executable doesn't exist" in err_msg or "browserType.launch" in err_msg:
-            logger.warning("[截图] Chromium 未安装，跳过。请运行: playwright install chromium")
-        else:
-            logger.warning(f"[截图] 截图失败: {e}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Lambda Strategy — Sell Put 回测")
     parser.add_argument("tickers", nargs="*", default=["TQQQ"],
@@ -438,8 +322,6 @@ def main():
 
         if template_html:
             embed_to_html(ticker, result, template_html)
-
-        capture_screenshot(ticker, result)
 
     logger.info("全部完成")
 

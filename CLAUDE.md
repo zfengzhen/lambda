@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 项目结构
 
 ```
-├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML → 截图 PNG
+├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML
 ├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C1-C4)、OTM推导、回测
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
@@ -22,15 +22,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB（S3 客户端复用 flat_file_fetcher）
 ├── flat_file_fetcher.py # S3 单日文件下载/缓存（output/flat_files_cache/）
 ├── rest_downloader.py   # Massive REST API 股票日K下载并写入 DB
-├── notify.py            # Telegram 截图推送：扫描 output/*.png → 发送 → 删除
-├── com.lambda.scheduled-notify.plist  # macOS launchd 定时任务（每日自动运行策略+推送）
 │
 ├── output/
 │   ├── market_data.duckdb        # 本地期权/股票数据库（已提交，方便共享基线数据）
 │   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（gitignore）
 │   ├── {TICKER}.json             # 策略数据（gitignore）
-│   ├── {TICKER}.html             # 可视化报告（gitignore）
-│   └── lambda-strategy-{TICKER}-{DATE}.png  # 截图（gitignore，由 notify.py 推送后删除）
+│   └── {TICKER}.html             # 可视化报告（gitignore）
 ├── conftest.py          # pytest 全局配置：注册 online marker，默认跳过在线测试
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖
@@ -39,7 +36,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     ├── api/             # API 文档（Massive 等）
     ├── superpowers/     # 实现计划与设计文档
     ├── strategy-*.md/html  # 策略说明文档
-    ├── scheduled-notify.md  # Telegram 定时推送配置说明
     └── entry-timing-research.md  # 入场限价优化研究报告
 ```
 
@@ -79,12 +75,9 @@ option_bars + equity_bars → B-S 反算 → DuckDB ticker_iv  # 标的级 IV
 source .venv/bin/activate
 
 # ── Lambda 策略（Sell Put）──
-python run.py              # 默认 TQQQ：自动同步 → 策略计算 → JSON → HTML → 截图 PNG
+python run.py              # 默认 TQQQ：自动同步 → 策略计算 → JSON → HTML
 python run.py TQQQ QQQ     # 多标的批量处理
 # 双击 {TICKER}.html 查看报告（数据已内嵌，无需服务器）
-
-# 截图依赖 Playwright + Chromium（首次需安装，缺失时自动跳过不影响主流程）
-# pip install playwright && playwright install chromium
 
 # ── 本地数据库同步 ──
 python data_sync.py                      # 同步所有标的（空库近 2 年，有数据增量）
@@ -104,9 +97,6 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - `MASSIVE_S3_SECRET_KEY` — S3 Secret Key，期权 Flat Files 下载必须设置
 - `MASSIVE_S3_ENDPOINT` — 可选，默认 `https://files.massive.com`
 - `MASSIVE_S3_BUCKET` — 可选，默认 `flatfiles`
-- `TELEGRAM_BOT_TOKEN` — Telegram Bot API Token，`notify.py` 推送必须设置
-- `TELEGRAM_CHAT_ID` — Telegram 接收者 ID，`notify.py` 推送必须设置
-
 所有 key 存放在 `~/.zshrc`，使用前 `source ~/.zshrc`。
 
 ## Gotchas
