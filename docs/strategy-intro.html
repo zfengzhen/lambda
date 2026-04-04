@@ -113,17 +113,17 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
       <span class="k">ELIF</span> <span class="c">Close &lt; MA20 AND Close &gt; MA60</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B1 回调均线 — 卖 8% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">波动率 &lt; 50% AND |MA20距| ≤ 4.5%</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B2 低波整理 — 卖 15% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B4 低波整理 — 卖 15% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">DIF &lt; 0 AND Close &gt; P30_PP</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B3 超跌支撑 — 卖 8% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B2 超跌支撑 — 卖 8% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">MA20 &gt; MA60 AND DIF &lt; 0</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B4 趋势动能弱 — 卖 10% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B3 趋势动能弱 — 卖 10% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| ≤ 10%</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C1 趋势延续 — 卖 15% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C2 趋势延续 — 卖 15% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| &gt; 10%</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C2 过热追涨 — 卖 15% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C3 过热追涨 — 卖 15% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C3 跌势减速 — 卖 15% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C1 跌势减速 — 卖 10% OTM Put</span><br><br>
       <span class="k">ELSE</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C4 加速下杀 — 卖 15% OTM Put</span>
     </div>
@@ -136,14 +136,14 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
     <table class="otm">
       <thead><tr><th>层级</th><th>OTM</th><th>逻辑</th></tr></thead>
       <tbody>
-        <tr><td style="color:#4fc3f7;font-weight:bold">A 企稳双撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>信号最强，支撑最可靠</td></tr>
-        <tr><td style="color:#ab47bc;font-weight:bold">B1 回调均线</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>均线回踩，中期结构完好</td></tr>
-        <tr><td style="color:#ff7043;font-weight:bold">B2 低波整理</td><td style="color:#ffa726;font-weight:bold">15%</td><td>低波但方向不明，偏保守</td></tr>
-        <tr><td style="color:#66bb6a;font-weight:bold">B3 超跌支撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>有 Pivot 支撑兜底</td></tr>
-        <tr><td style="color:#ffa726;font-weight:bold">B4 趋势动能弱</td><td style="color:#ffa726;font-weight:bold">10%</td><td>趋势尚存但动能衰减，适度保守</td></tr>
-        <tr><td style="color:#90a4ae;font-weight:bold">C1 趋势延续</td><td style="color:#f07178;font-weight:bold">15%</td><td>趋势运行中但缺少强支撑</td></tr>
-        <tr><td style="color:#ef5350;font-weight:bold">C2 过热追涨</td><td style="color:#f07178;font-weight:bold">15%</td><td>短期超买，回调风险增大</td></tr>
-        <tr><td style="color:#26c6da;font-weight:bold">C3 跌势减速</td><td style="color:#f07178;font-weight:bold">15%</td><td>空头衰减，底部可能形成</td></tr>
+        <tr><td style="color:#69f0ae;font-weight:bold">A 企稳双撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>信号最强，支撑最可靠</td></tr>
+        <tr><td style="color:#b2ebf2;font-weight:bold">B1 回调均线</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>均线回踩，中期结构完好</td></tr>
+        <tr><td style="color:#4dd0e1;font-weight:bold">B2 超跌支撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>有 Pivot 支撑兜底</td></tr>
+        <tr><td style="color:#0097a7;font-weight:bold">B3 趋势动能弱</td><td style="color:#ffa726;font-weight:bold">10%</td><td>趋势尚存但动能衰减，适度保守</td></tr>
+        <tr><td style="color:#ffca28;font-weight:bold">B4 低波整理</td><td style="color:#f07178;font-weight:bold">15%</td><td>低波但方向不明，偏保守</td></tr>
+        <tr><td style="color:#ffa726;font-weight:bold">C1 跌势减速</td><td style="color:#ffa726;font-weight:bold">10%</td><td>空头衰减，底部可能形成，适度保守</td></tr>
+        <tr><td style="color:#e57373;font-weight:bold">C2 趋势延续</td><td style="color:#f07178;font-weight:bold">15%</td><td>趋势运行中但缺少强支撑</td></tr>
+        <tr><td style="color:#ef5350;font-weight:bold">C3 过热追涨</td><td style="color:#f07178;font-weight:bold">15%</td><td>短期超买，回调风险增大</td></tr>
         <tr><td style="color:#e53935;font-weight:bold">C4 加速下杀</td><td style="color:#f07178;font-weight:bold">15%</td><td>最危险状态，下行动能增强</td></tr>
       </tbody>
     </table>
@@ -154,78 +154,78 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
     <h3>⚠ 连续弱势熔断规则</h3>
     <p style="font-size:13px;color:#a0aab8;margin-bottom:14px">前 2 周连续 C 类 + 本周也是 C 类时触发判断（本周是 A/B 类始终放行）：</p>
     <div class="rule cb-rule-skip">
-      <strong style="color:#ef5350">暂停</strong> — 本周 C 类但非 C3：趋势没有减速迹象（C1 还在涨但不稳、C2 过热、C4 加速下杀），风险未收敛
+      <strong style="color:#ef5350">暂停</strong> — 本周 C 类但非 C1：趋势没有减速迹象（C2 还在涨但不稳、C3 过热、C4 加速下杀），风险未收敛
     </div>
     <div class="rule cb-rule-allow">
-      <strong style="color:#4caf50">继续卖出</strong> — 本周 C3 + 前 2 周有 C3：跌势已连续收窄（MACD 收窄出现过至少 2 次），空头力量持续衰减，底部信号较可靠
+      <strong style="color:#4caf50">继续卖出</strong> — 本周 C1 + 前 2 周有 C1：跌势已连续收窄（MACD 收窄出现过至少 2 次），空头力量持续衰减，底部信号较可靠
     </div>
     <div class="rule cb-rule-skip">
-      <strong style="color:#ef5350">暂停</strong> — 本周 C3 + 前 2 周无 C3：之前都是纯弱势，本周才首次出现减速，可能只是下跌中继的短暂喘息而非真正见底
+      <strong style="color:#ef5350">暂停</strong> — 本周 C1 + 前 2 周无 C1：之前都是纯弱势，本周才首次出现减速，可能只是下跌中继的短暂喘息而非真正见底
     </div>
-    <div class="core">核心思路：单次 C3 减速不可信，连续减速才可信；A/B 类已有支撑条件，不受熔断影响。</div>
+    <div class="core">核心思路：单次 C1 减速不可信，连续减速才可信；A/B 类已有支撑条件，不受熔断影响。</div>
   </div>
 
   <!-- 各层级解读 -->
   <h2 class="sec-title">各层级解读</h2>
   <div class="tier-grid">
 
-    <div class="tier" style="background:#0d1f2b;border-color:#1a3a4d">
-      <div class="name"><span class="dot" style="background:#4fc3f7"></span><span style="color:#4fc3f7">A · 企稳双撑</span></div>
+    <div class="tier" style="background:#0d2b1a;border-color:#1a402d">
+      <div class="name"><span class="dot" style="background:#69f0ae"></span><span style="color:#69f0ae">A · 企稳双撑</span></div>
       <div class="cond">MACD收窄 AND Close &gt; P5_PP AND Close &gt; P30_PP</div>
       <div class="meaning">下跌动能正在衰减，短期和中期支撑均在脚下。决策树中信号最强的一档。</div>
       <div class="action" style="color:#4caf50">→ 卖 8% OTM Put — 行权价最近，权利金最厚</div>
     </div>
 
-    <div class="tier" style="background:#1a0d2b;border-color:#2d1a40">
-      <div class="name"><span class="dot" style="background:#ab47bc"></span><span style="color:#ab47bc">B1 · 回调均线</span></div>
+    <div class="tier" style="background:#0d2228;border-color:#1a3540">
+      <div class="name"><span class="dot" style="background:#b2ebf2"></span><span style="color:#b2ebf2">B1 · 回调均线</span></div>
       <div class="cond">Close &lt; MA20 AND Close &gt; MA60</div>
       <div class="meaning">中期多头趋势未被破坏，短期出现回调。趋势行情中常见的"均线回踩"形态。</div>
-      <div class="action" style="color:#ab47bc">→ 卖 8% OTM Put</div>
+      <div class="action" style="color:#b2ebf2">→ 卖 8% OTM Put</div>
     </div>
 
-    <div class="tier" style="background:#2b1a0d;border-color:#402d1a">
-      <div class="name"><span class="dot" style="background:#ff7043"></span><span style="color:#ff7043">B2 · 低波整理</span></div>
-      <div class="cond">波动率 &lt; 50% AND |MA20距| ≤ 4.5%</div>
-      <div class="meaning">市场窄幅震荡，方向不明但波动温和。Theta 衰减对卖方有利，大幅下行概率偏低。</div>
-      <div class="action" style="color:#ff7043">→ 卖 15% OTM Put — 低波环境用深虚值换安全</div>
-    </div>
-
-    <div class="tier" style="background:#0d2b1a;border-color:#1a402d">
-      <div class="name"><span class="dot" style="background:#66bb6a"></span><span style="color:#66bb6a">B3 · 超跌支撑</span></div>
+    <div class="tier" style="background:#0d1f25;border-color:#1a3238">
+      <div class="name"><span class="dot" style="background:#4dd0e1"></span><span style="color:#4dd0e1">B2 · 超跌支撑</span></div>
       <div class="cond">DIF &lt; 0 AND Close &gt; P30_PP</div>
       <div class="meaning">中期动能偏空，但 30 日枢轴点提供结构性支撑。弱势中找支撑的逻辑。</div>
-      <div class="action" style="color:#66bb6a">→ 卖 8% OTM Put</div>
+      <div class="action" style="color:#4dd0e1">→ 卖 8% OTM Put</div>
+    </div>
+
+    <div class="tier" style="background:#0d191f;border-color:#1a2c33">
+      <div class="name"><span class="dot" style="background:#0097a7"></span><span style="color:#0097a7">B3 · 趋势动能弱</span></div>
+      <div class="cond">MA20 &gt; MA60 AND DIF &lt; 0</div>
+      <div class="meaning">趋势的骨架还在，但肌肉已松。均线多头排列是滞后指标，DIF 转负是领先信号——趋势可能正在转向。</div>
+      <div class="action" style="color:#0097a7">→ 卖 10% OTM Put</div>
+    </div>
+
+    <div class="tier" style="background:#2b250d;border-color:#40381a">
+      <div class="name"><span class="dot" style="background:#ffca28"></span><span style="color:#ffca28">B4 · 低波整理</span></div>
+      <div class="cond">波动率 &lt; 50% AND |MA20距| ≤ 4.5%</div>
+      <div class="meaning">市场窄幅震荡，方向不明但波动温和。Theta 衰减对卖方有利，大幅下行概率偏低。</div>
+      <div class="action" style="color:#ffca28">→ 卖 15% OTM Put — 低波环境用深虚值换安全</div>
     </div>
 
     <div class="tier" style="background:#2b200d;border-color:#40331a">
-      <div class="name"><span class="dot" style="background:#ffa726"></span><span style="color:#ffa726">B4 · 趋势动能弱</span></div>
-      <div class="cond">MA20 &gt; MA60 AND DIF &lt; 0</div>
-      <div class="meaning">趋势的骨架还在，但肌肉已松。均线多头排列是滞后指标，DIF 转负是领先信号——趋势可能正在转向。</div>
+      <div class="name"><span class="dot" style="background:#ffa726"></span><span style="color:#ffa726">C1 · 跌势减速</span></div>
+      <div class="cond">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</div>
+      <div class="meaning">价格跌破中期均线，但 MACD 柱在缩小，空头力量正在衰减。底部可能正在形成。</div>
       <div class="action" style="color:#ffa726">→ 卖 10% OTM Put</div>
     </div>
 
-    <div class="tier" style="background:#151c28;border-color:#253040">
-      <div class="name"><span class="dot" style="background:#90a4ae"></span><span style="color:#90a4ae">C1 · 趋势延续</span></div>
+    <div class="tier" style="background:#2b1a1a;border-color:#402828">
+      <div class="name"><span class="dot" style="background:#e57373"></span><span style="color:#e57373">C2 · 趋势延续</span></div>
       <div class="cond">Close ≥ MA20 AND |MA20偏离| ≤ 10%</div>
       <div class="meaning">价格在 MA20 上方且偏离合理，趋势仍在运行中，但缺少更强的支撑信号。</div>
-      <div class="action" style="color:#90a4ae">→ 卖 15% OTM Put</div>
+      <div class="action" style="color:#e57373">→ 卖 15% OTM Put</div>
     </div>
 
-    <div class="tier" style="background:#1a1015;border-color:#302028">
-      <div class="name"><span class="dot" style="background:#ef5350"></span><span style="color:#ef5350">C2 · 过热追涨</span></div>
+    <div class="tier" style="background:#2b0d0d;border-color:#401a1a">
+      <div class="name"><span class="dot" style="background:#ef5350"></span><span style="color:#ef5350">C3 · 过热追涨</span></div>
       <div class="cond">Close ≥ MA20 AND |MA20偏离| &gt; 10%</div>
       <div class="meaning">价格远超 MA20，短期超买，回调风险增大。</div>
       <div class="action" style="color:#ef5350">→ 卖 15% OTM Put</div>
     </div>
 
-    <div class="tier" style="background:#0d1a1f;border-color:#1a2d33">
-      <div class="name"><span class="dot" style="background:#26c6da"></span><span style="color:#26c6da">C3 · 跌势减速</span></div>
-      <div class="cond">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</div>
-      <div class="meaning">价格跌破中期均线，但 MACD 柱在缩小，空头力量正在衰减。底部可能正在形成。</div>
-      <div class="action" style="color:#26c6da">→ 卖 15% OTM Put</div>
-    </div>
-
-    <div class="tier" style="background:#1a0a0a;border-color:#301515">
+    <div class="tier" style="background:#2b0d0d;border-color:#401515">
       <div class="name"><span class="dot" style="background:#e53935"></span><span style="color:#e53935">C4 · 加速下杀</span></div>
       <div class="cond">Close &lt; MA60 AND |MACD今| ≥ |MACD昨|</div>
       <div class="meaning">价格跌破中期均线且下行动能还在增强，是最危险的市场状态。</div>
@@ -287,7 +287,7 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
 
   <div class="memo">
     <strong>关于 OTM 分层</strong><br>
-    A/B1/B3 用 8%（信号较强，支撑可靠），B4 用 10%（趋势在但动能弱），B2 和 C 类用 15%（偏保守）。参数根据标的杠杆倍数自动缩放。
+    A/B1/B2 用 8%（信号较强，支撑可靠），B3/C1 用 10%（趋势在但动能弱或跌势减速），B4 和 C2-C4 用 15%（偏保守）。参数根据标的杠杆倍数自动缩放。
   </div>
 
   <div class="memo">

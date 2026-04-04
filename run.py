@@ -133,9 +133,9 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
     enrich_weeks_with_options(ticker, weeks)
 
     # 熔断标记：前 2 周都是 C 类 + 本周也是 C 类时才可能暂停（A/B 类始终放行）
-    #   本周 C 类但非 C3 → 暂停
-    #   本周 C3 且前 2 周含 C3 → 继续卖出（跌势已有减速信号）
-    #   本周 C3 但前 2 周无 C3 → 暂停（纯下杀后首次减速，不够安全）
+    #   本周 C 类但非 C1 → 暂停
+    #   本周 C1 且前 2 周含 C1 → 继续卖出（跌势已有减速信号）
+    #   本周 C1 但前 2 周无 C1 → 暂停（纯下杀后首次减速，不够安全）
     _c_tiers = {"C1", "C2", "C3", "C4"}
     weeks_asc = sorted(weeks, key=lambda w: w["date"])
     for i, w in enumerate(weeks_asc):
@@ -143,8 +143,8 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             p1 = weeks_asc[i - 1]["tier"]
             p2 = weeks_asc[i - 2]["tier"]
             if p1 in _c_tiers and p2 in _c_tiers and w["tier"] in _c_tiers:
-                if w["tier"] == "C3" and (p1 == "C3" or p2 == "C3"):
-                    w["skip"] = False  # 前2周有C3减速信号，本周C3继续卖出
+                if w["tier"] == "C1" and (p1 == "C1" or p2 == "C1"):
+                    w["skip"] = False  # 前2周有C1减速信号，本周C1继续卖出
                 else:
                     w["skip"] = True
                     w["skip_reason"] = f"前2周 {p2}→{p1}，本周 {w['tier']}，连续弱势暂停"

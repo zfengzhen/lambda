@@ -94,49 +94,49 @@ class TestClassifyTier:
         assert classify_tier(row) == "B1"
 
     def test_tier_b2(self):
-        """B2 低波整理: hist_vol < 50 AND |MA20距离| <= 5%"""
-        row = self._base_row(close=100, ma20=102, hist_vol=40,
-                             macd=-10, prev_macd=-5,
-                             ma60=110)  # close < ma60 → 排除 B1（B1 要求 close > ma60）
-        assert classify_tier(row) == "B2"
-
-    def test_tier_b3(self):
-        """B3 超跌支撑: DIF < 0 AND close > P30_PP"""
+        """B2 超跌支撑: DIF < 0 AND close > P30_PP"""
         row = self._base_row(close=100, dif=-2, pivot_30_pp=90,
                              macd=-10, prev_macd=-5,
                              ma20=90, ma60=80,  # close > ma20 → 排除 B1
-                             hist_vol=70)        # hist_vol >= 50 → 排除 B2
+                             hist_vol=70)        # hist_vol >= 50 → 排除 B4
+        assert classify_tier(row) == "B2"
+
+    def test_tier_b3(self):
+        """B3 趋势动能弱: MA20 > MA60 AND DIF < 0"""
+        row = self._base_row(close=80, dif=-2, ma20=110, ma60=90,
+                             macd=-10, prev_macd=-5,
+                             pivot_30_pp=120,  # close < P30_PP → 排除 B2
+                             hist_vol=70)      # close < ma60 → 排除 B1
         assert classify_tier(row) == "B3"
 
     def test_tier_b4(self):
-        """B4 趋势动能弱: MA20 > MA60 AND DIF < 0"""
-        row = self._base_row(close=80, dif=-2, ma20=110, ma60=90,
+        """B4 低波整理: hist_vol < 50 AND |MA20距离| <= 5%"""
+        row = self._base_row(close=100, ma20=102, hist_vol=40,
                              macd=-10, prev_macd=-5,
-                             pivot_30_pp=120,  # close < P30_PP → 排除 B3
-                             hist_vol=70)      # close < ma60 → 排除 B1
+                             ma60=110)  # close < ma60 → 排除 B1（B1 要求 close > ma60）
         assert classify_tier(row) == "B4"
 
     def test_tier_c1(self):
-        """C1 趋势延续: Close >= MA20, |MA20偏离| <= 10%, 不满足 A/B"""
-        row = self._base_row(close=105, ma20=100, ma60=90,
-                             macd=-10, prev_macd=-5,  # MACD 放大 → 非 A
-                             dif=1, hist_vol=60,       # DIF>0 → 非 B3/B4
-                             pivot_5_pp=120, pivot_30_pp=120)  # 非 A
-        assert classify_tier(row) == "C1"
-
-    def test_tier_c2(self):
-        """C2 过热追涨: Close >= MA20, |MA20偏离| > 10%"""
-        row = self._base_row(close=115, ma20=100, ma60=90,
-                             macd=-10, prev_macd=-5,
-                             dif=1, hist_vol=60,
-                             pivot_5_pp=120, pivot_30_pp=120)
-        assert classify_tier(row) == "C2"
-
-    def test_tier_c3(self):
-        """C3 跌势减速: Close < MA60, MACD 收窄, MA20 < MA60 (排除 B4)"""
+        """C1 跌势减速: Close < MA60, MACD 收窄, MA20 < MA60 (排除 B3)"""
         row = self._base_row(close=70, ma20=75, ma60=80,
                              macd=-3, prev_macd=-5,   # |3| < |5| → MACD 收窄
                              dif=-2, hist_vol=80,
+                             pivot_5_pp=120, pivot_30_pp=120)
+        assert classify_tier(row) == "C1"
+
+    def test_tier_c2(self):
+        """C2 趋势延续: Close >= MA20, |MA20偏离| <= 10%, 不满足 A/B"""
+        row = self._base_row(close=105, ma20=100, ma60=90,
+                             macd=-10, prev_macd=-5,  # MACD 放大 → 非 A
+                             dif=1, hist_vol=60,       # DIF>0 → 非 B2/B3
+                             pivot_5_pp=120, pivot_30_pp=120)  # 非 A
+        assert classify_tier(row) == "C2"
+
+    def test_tier_c3(self):
+        """C3 过热追涨: Close >= MA20, |MA20偏离| > 10%"""
+        row = self._base_row(close=115, ma20=100, ma60=90,
+                             macd=-10, prev_macd=-5,
+                             dif=1, hist_vol=60,
                              pivot_5_pp=120, pivot_30_pp=120)
         assert classify_tier(row) == "C3"
 
