@@ -1,5 +1,5 @@
 """
-部署脚本：密码包装 → Netlify 部署 → Telegram 通知
+部署脚本：密码包装 → Cloudflare Pages 部署 → Telegram 通知
 
 用法:
     python deploy.py                    # 部署 output/TQQQ.html
@@ -7,11 +7,9 @@
 """
 import base64
 import hashlib
-import io
 import logging
 import os
 import sys
-import zipfile
 
 import requests
 
@@ -21,45 +19,89 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
 
-def build_deploy_zip(html: str) -> bytes:
-    """将 HTML 打包为 ZIP（index.html + _headers），返回 ZIP 字节。"""
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("index.html", html)
-        # 强制 Netlify 以 text/html 提供文件
-        zf.writestr("_headers", "/*\n  Content-Type: text/html; charset=utf-8\n")
-    return buf.getvalue()
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
 
 
-def deploy_to_netlify(html: str) -> str:
-    """将 HTML 部署到 Netlify，返回站点 URL。
+def deploy_to_cloudflare(html: str) -> str:
+    """将 HTML 部署到 Cloudflare Pages，返回站点 URL。
 
-    环境变量：LAMBDA_NETLIFY_AUTH_TOKEN, LAMBDA_NETLIFY_SITE_ID
-    使用 ZIP deploy 方式：POST /api/v1/sites/{site_id}/deploys
+    环境变量：CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT
+    使用未文档化的 Direct Upload API（4 步）：
+      1. GET  upload-token
+      2. POST pages/assets/upload（base64 文件内容）
+      3. POST pages/assets/upsert-hashes
+      4. POST deployments（manifest）
     """
-    token = os.environ.get("LAMBDA_NETLIFY_AUTH_TOKEN", "")
-    site_id = os.environ.get("LAMBDA_NETLIFY_SITE_ID", "")
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+    project = os.environ.get("CLOUDFLARE_PAGES_PROJECT", "")
     if not token:
-        raise ValueError("缺少环境变量 LAMBDA_NETLIFY_AUTH_TOKEN")
-    if not site_id:
-        raise ValueError("缺少环境变量 LAMBDA_NETLIFY_SITE_ID")
+        raise ValueError("缺少环境变量 CLOUDFLARE_API_TOKEN")
+    if not account_id:
+        raise ValueError("缺少环境变量 CLOUDFLARE_ACCOUNT_ID")
+    if not project:
+        raise ValueError("缺少环境变量 CLOUDFLARE_PAGES_PROJECT")
 
-    zip_bytes = build_deploy_zip(html)
+    auth_headers = {"Authorization": f"Bearer {token}"}
+    file_bytes = html.encode("utf-8")
+    file_b64 = base64.b64encode(file_bytes).decode("ascii")
+    file_hash = hashlib.md5(file_bytes).hexdigest()
+    file_path = "/index.html"
 
+    # ① 获取 upload token（JWT，有效 300 秒）
+    resp = requests.get(
+        f"{CF_API_BASE}/accounts/{account_id}/pages/projects/{project}/upload-token",
+        headers=auth_headers,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    jwt = resp.json()["result"]["jwt"]
+    logger.info("Cloudflare upload token 已获取")
+
+    upload_headers = {"Authorization": f"Bearer {jwt}"}
+
+    # ② 上传文件内容
     resp = requests.post(
-        f"https://api.netlify.com/api/v1/sites/{site_id}/deploys",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/zip",
-        },
-        data=zip_bytes,
+        f"{CF_API_BASE}/pages/assets/upload",
+        headers={**upload_headers, "Content-Type": "application/json"},
+        json=[
+            {
+                "key": file_hash,
+                "value": file_b64,
+                "metadata": {"contentType": "text/html"},
+                "base64": True,
+            }
+        ],
+        timeout=60,
+    )
+    resp.raise_for_status()
+    logger.info("文件已上传到 Cloudflare")
+
+    # ③ 注册 hash
+    resp = requests.post(
+        f"{CF_API_BASE}/pages/assets/upsert-hashes",
+        headers={**upload_headers, "Content-Type": "application/json"},
+        json={"hashes": [file_hash]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    logger.info("文件 hash 已注册")
+
+    # ④ 创建 deployment（manifest 映射路径 → hash）
+    manifest = {file_path: file_hash}
+    resp = requests.post(
+        f"{CF_API_BASE}/accounts/{account_id}/pages/projects/{project}/deployments",
+        headers=auth_headers,
+        files={"manifest": (None, __import__("json").dumps(manifest))},
         timeout=60,
     )
     resp.raise_for_status()
 
-    data = resp.json()
-    url = data.get("ssl_url") or data.get("url") or f"https://{site_id}"
-    logger.info(f"Netlify 部署成功: {url} (deploy_id={data.get('id')})")
+    data = resp.json().get("result", {})
+    deploy_url = data.get("url", "")
+    # 使用生产 URL，而非部署预览 URL
+    url = f"https://{project}.pages.dev"
+    logger.info(f"Cloudflare Pages 部署成功: {url} (preview={deploy_url})")
     return url
 
 
@@ -182,10 +224,10 @@ def send_telegram(url: str, ticker: str = "TQQQ"):
 
 
 def main():
-    """入口：读取 HTML → 密码包装 → Netlify 部署 → Telegram 通知"""
+    """入口：读取 HTML → 密码包装 → Cloudflare Pages 部署 → Telegram 通知"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="部署策略报告到 Netlify")
+    parser = argparse.ArgumentParser(description="部署策略报告到 Cloudflare Pages")
     parser.add_argument("--ticker", default="TQQQ", help="标的代码（默认 TQQQ）")
     args = parser.parse_args()
 
@@ -216,8 +258,8 @@ def main():
     wrapped = wrap_with_password(raw_html, password)
     logger.info(f"[{ticker}] 密码包装完成 ({len(wrapped)} bytes)")
 
-    # 部署到 Netlify
-    url = deploy_to_netlify(wrapped)
+    # 部署到 Cloudflare Pages
+    url = deploy_to_cloudflare(wrapped)
 
     # Telegram 通知
     send_telegram(url, ticker)

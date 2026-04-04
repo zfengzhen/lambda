@@ -4,15 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-基于股票的策略研究与交易项目，集成两个 API：
-- **Futu OpenAPI**（富途）— 香港券商，提供 Python SDK，支持港股/美股/A股行情获取与交易
-- **Massive API** — 金融数据平台，提供股票、加密货币、外汇、期权、指数的平文件和 REST 接口，支持纳秒级 tick 数据
+基于股票的策略研究与交易项目，使用 **Massive API** — 金融数据平台，提供股票、加密货币、外汇、期权、指数的平文件和 REST 接口，支持纳秒级 tick 数据
 
 ## 项目结构
 
 ```
 ├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML
-├── deploy.py            # 部署脚本：密码包装 → Netlify ZIP 部署 → Telegram 通知
+├── deploy.py            # 部署脚本：密码包装 → Cloudflare Pages 部署 → Telegram 通知
 ├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C1-C4)、OTM推导、回测
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
@@ -65,9 +63,7 @@ option_bars + equity_bars → B-S 反算 → DuckDB ticker_iv  # 标的级 IV
 
 ## 开发说明
 
-- 项目基于 Python（富途 SDK 为 Python）
-- 调用富途 API 前需在本地启动 OpenD 网关进程；可使用 `install-opend` skill 进行安装配置
-- 开发时可使用 `openapi` skill 快速查询富途交易/行情接口
+- 项目基于 Python，版本 3.12+（开发环境使用 3.14）
 
 ## 常用命令
 
@@ -80,8 +76,8 @@ python run.py              # 默认 TQQQ：自动同步 → 策略计算 → JSO
 python run.py TQQQ QQQ     # 多标的批量处理
 # 双击 {TICKER}.html 查看报告（数据已内嵌，无需服务器）
 
-# ── 部署到 Netlify ──
-python deploy.py                # 默认 TQQQ：密码包装 → Netlify 部署 → Telegram 通知
+# ── 部署到 Cloudflare Pages ──
+python deploy.py                # 默认 TQQQ：密码包装 → Cloudflare 部署 → Telegram 通知
 python deploy.py --ticker QQQ   # 部署指定标的
 
 # ── 本地数据库同步 ──
@@ -103,8 +99,9 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - `MASSIVE_S3_ENDPOINT` — 可选，默认 `https://files.massive.com`
 - `MASSIVE_S3_BUCKET` — 可选，默认 `flatfiles`
 - `LAMBDA_DEPLOY_PASSWORD` — 前端密码锁密码，`deploy.py` 必须设置
-- `LAMBDA_NETLIFY_AUTH_TOKEN` — Netlify Personal Access Token，`deploy.py` 必须设置
-- `LAMBDA_NETLIFY_SITE_ID` — Netlify 站点 ID，`deploy.py` 必须设置
+- `CLOUDFLARE_API_TOKEN` — Cloudflare API Token，`deploy.py` 必须设置
+- `CLOUDFLARE_ACCOUNT_ID` — Cloudflare 账户 ID，`deploy.py` 必须设置
+- `CLOUDFLARE_PAGES_PROJECT` — Cloudflare Pages 项目名，`deploy.py` 必须设置
 - `LAMBDA_TELEGRAM_BOT_TOKEN` — Telegram Bot Token，部署通知使用（可选，缺少时跳过通知）
 - `LAMBDA_TELEGRAM_CHAT_ID` — Telegram Chat ID，部署通知使用（可选，缺少时跳过通知）
 
@@ -112,15 +109,13 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 
 ## Gotchas
 
+- **deploy.py 使用未文档化 API**：Cloudflare Pages Direct Upload REST API 非官方文档，可能随时变动。若部署失败，优先检查 API 是否变更，备选方案是改用 `wrangler pages deploy`。
 - **月级 sync_log 用独立 data_type**：`sync_options` 写入 sync_log 时 `data_type='option_month'`，键为月份第一天（如 `2024-04-01`）。若误用 `'option'`，会与旧日级记录冲突，导致整月被错误跳过。sync_log 新增 `ticker` 列，`option_month` 记录按 ticker 独立标记，TQQQ 已同步的月份不影响 QQQ 的同步判断。
-- **flat_files_cache 是永久缓存**：`output/flat_files_cache/*.csv.gz` 不会自动清理，重跑直接复用，无需重新下载。
-- **INSERT OR IGNORE**：`insert_option_bars_from_csv` 使用 `INSERT OR IGNORE`，同月重跑安全，不会报主键冲突。
 - **ensure_synced 按 ticker 独立计算同步起点**：每个 ticker 查自己的 `MAX(date)`（`get_latest_equity_date`），没数据的走全量（近 2 年），已最新的跳过。不再使用全局 `MAX(date)`。
 - **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
 - **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。该函数只清目标 ticker 的 `option_month` sync_log，不影响其他 ticker 的同步状态。
-- **IV 计算依赖 scipy**：`iv.py` 使用 `scipy.stats.norm` 做 B-S 定价，需 `pip install scipy`。
 - **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法，与 VIX 方法论一致。
 - **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。OCC strike 判定为平稳到期时，同步清除 `recovery_days` 和 `recovery_gap`，避免策略 strike 与 OCC strike 微小差异导致残留。
 - **期权合约向下匹配**：`query_option_on_date` 取 strike ≤ 策略目标值且最接近的合约，确保实际 OTM ≥ 策略要求。当合约 strike 间距较大（如 TQQQ $5 间距）时，实际 OTM 可能显著大于策略值。
