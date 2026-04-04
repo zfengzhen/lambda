@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 ├── run.py               # 策略入口：拉取数据 → 策略计算 → JSON → HTML
+├── deploy.py            # 部署脚本：密码包装 → Netlify ZIP 部署 → Telegram 通知
 ├── strategy.py          # 策略核心：周分组、分层判定(A/B1-B4/C1-C4)、OTM推导、回测
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
@@ -79,6 +80,10 @@ python run.py              # 默认 TQQQ：自动同步 → 策略计算 → JSO
 python run.py TQQQ QQQ     # 多标的批量处理
 # 双击 {TICKER}.html 查看报告（数据已内嵌，无需服务器）
 
+# ── 部署到 Netlify ──
+python deploy.py                # 默认 TQQQ：密码包装 → Netlify 部署 → Telegram 通知
+python deploy.py --ticker QQQ   # 部署指定标的
+
 # ── 本地数据库同步 ──
 python data_sync.py                      # 同步所有标的（空库近 2 年，有数据增量）
 python data_sync.py --tickers TQQQ QQQ   # 同步指定标的
@@ -97,6 +102,12 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - `MASSIVE_S3_SECRET_KEY` — S3 Secret Key，期权 Flat Files 下载必须设置
 - `MASSIVE_S3_ENDPOINT` — 可选，默认 `https://files.massive.com`
 - `MASSIVE_S3_BUCKET` — 可选，默认 `flatfiles`
+- `LAMBDA_DEPLOY_PASSWORD` — 前端密码锁密码，`deploy.py` 必须设置
+- `LAMBDA_NETLIFY_AUTH_TOKEN` — Netlify Personal Access Token，`deploy.py` 必须设置
+- `LAMBDA_NETLIFY_SITE_ID` — Netlify 站点 ID，`deploy.py` 必须设置
+- `LAMBDA_TELEGRAM_BOT_TOKEN` — Telegram Bot Token，部署通知使用（可选，缺少时跳过通知）
+- `LAMBDA_TELEGRAM_CHAT_ID` — Telegram Chat ID，部署通知使用（可选，缺少时跳过通知）
+
 所有 key 存放在 `~/.zshrc`，使用前 `source ~/.zshrc`。
 
 ## Gotchas
