@@ -67,12 +67,12 @@ def fetch_equity_bars(ticker: str, api_key: str) -> pd.DataFrame | None:
     return df
 
 
-def enrich_weeks_with_options(ticker: str, weeks: list[dict]):
-    """为每周回测数据补充期权合约信息，并用期权价格重算结算差比。
+def enrich_weeks_with_options(ticker: str, weeks: list[dict], daily: pd.DataFrame):
+    """为每周回测数据补充期权合约信息，并用 OCC 真实 strike 重算结算指标。
 
     查询行权价向下取整对应的 Put 期权在入场日的价格，
     写入 option_symbol / option_dte / option_price / option_vwap 字段。
-    用期权权利金重算 settle_diff（Sell Put 盈亏比）。
+    用合约真实 strike 重算 settle_diff / safe_expiry / recovery_days。
     """
     for w in weeks:
         strike = w.get("strike")
@@ -102,6 +102,24 @@ def enrich_weeks_with_options(ticker: str, weeks: list[dict]):
             if w.get("expiry_close") is not None and occ_strike > 0:
                 w["settle_diff"] = round((w["expiry_close"] - occ_strike) / occ_strike * 100, 2)
                 w["safe_expiry"] = w["settle_diff"] > 0
+                # 用 OCC strike 统一重算 recovery_days，避免与策略 strike 不一致
+                if w["safe_expiry"]:
+                    w["recovery_days"] = None
+                    w["recovery_gap"] = None
+                else:
+                    # 穿仓：用 OCC strike 重算恢复天数
+                    expiry_str = w["expiry_date"]
+                    after = daily[daily["date"] > expiry_str].sort_values("date")
+                    recovered = after[after["close"] > occ_strike]
+                    if not recovered.empty:
+                        rec_date_str = str(recovered.iloc[0]["date"])
+                        delta = datetime.strptime(rec_date_str, "%Y-%m-%d") - datetime.strptime(expiry_str, "%Y-%m-%d")
+                        w["recovery_days"] = delta.days
+                        w["recovery_gap"] = None
+                    else:
+                        w["recovery_days"] = None
+                        latest_close = float(daily.iloc[-1]["close"])
+                        w["recovery_gap"] = round((latest_close - occ_strike) / occ_strike * 100, 1)
         else:
             w["option_symbol"] = None
             w["option_dte"] = None
@@ -129,8 +147,8 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
     weekly_rows = group_by_week(df)
     weeks = backtest_weeks(weekly_rows, df, otm=otm)
 
-    # 丰富期权数据：查询行权价向下取整的 Put 期权价格
-    enrich_weeks_with_options(ticker, weeks)
+    # 丰富期权数据：查询行权价向下取整的 Put 期权价格，用 OCC strike 重算结算指标
+    enrich_weeks_with_options(ticker, weeks, df)
 
     # 熔断标记：前 2 周都是 C 类 + 本周也是 C 类时才可能暂停（A/B 类始终放行）
     #   本周 C 类但非 C1 → 暂停
@@ -175,6 +193,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             occ_strike_str = str(int(occ_strike)) if occ_strike == int(occ_strike) else str(occ_strike)
             latest["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike_str}"
             latest["option_dte"] = (datetime.strptime(occ_expiry, "%Y-%m-%d") - datetime.strptime(latest["date"], "%Y-%m-%d")).days
+            latest["option_price"] = round(lt_opt["close"], 2)
 
     dates = pd.to_datetime(df["date"])
 

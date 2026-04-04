@@ -29,7 +29,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │   ├── market_data.duckdb        # 本地期权/股票数据库（已提交，方便共享基线数据）
 │   ├── flat_files_cache/         # S3 原始 .csv.gz 本地缓存（gitignore）
 │   ├── {TICKER}.json             # 策略数据（gitignore）
-│   └── {TICKER}.html             # 可视化报告（gitignore）
+│   ├── {TICKER}.html             # 可视化报告（gitignore）
+│   └── lambda-strategy-{TICKER}-{DATE}.png  # 截图（gitignore，由 notify.py 推送后删除）
 ├── conftest.py          # pytest 全局配置：注册 online marker，默认跳过在线测试
 ├── tests/               # pytest 单元测试
 ├── requirements.txt     # Python 依赖
@@ -117,7 +118,7 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
-- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。A/B1/B2 为 8% OTM，B3/C1 为 10% OTM，B4/C2-C4 为 12% OTM。
+- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。A/B1/B2 为 8% OTM，B3/C1 为 10% OTM，B4/C2-C4 为 15% OTM。
 - **classify_tier 返回 C1-C4**：不再返回 `"C"`，而是 `"C1"`（跌势减速）、`"C2"`（趋势延续）、`"C3"`（过热追涨）、`"C4"`（加速下杀）。C 子分类基于 Close vs MA20/MA60 和 MACD 收窄/放大。
 - **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。该函数只清目标 ticker 的 `option_month` sync_log，不影响其他 ticker 的同步状态。
 - **option_bars 新增结构化列**：`strike`/`expiration`/`option_type` 在入库时从 OCC symbol 解析填入。存量数据由 `init_db()` 自动回填。
@@ -128,7 +129,8 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
   - 本周 C1 + 前 2 周有 C1：跌势已连续收窄（MACD 收窄出现过至少 2 次），空头力量持续衰减，底部信号较可靠，继续卖出
   - 本周 C1 + 前 2 周无 C1：之前都是 C2/C3/C4 纯弱势，本周才首次出现减速，可能只是下跌中继的短暂喘息而非真正见底，不够安全，暂停
   - 核心思路：单次 C1 减速不可信，连续减速才可信；A/B 类已有支撑条件，不受熔断影响
-- **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。
+- **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。OCC strike 判定为平稳到期时，同步清除 `recovery_days` 和 `recovery_gap`，避免策略 strike 与 OCC strike 微小差异导致残留。
+- **EXPIRY_WEEKS = 4**：到期周数为 4 周（原为 3 周）。`find_expiry_date` 基于 NYSE 交易日历向前推 4 周取最近的周五。
 
 ## 开发与提交规范
 
