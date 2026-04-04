@@ -479,38 +479,6 @@ function renderCharts(dailyBars) {
     })));
   });
 
-  // ---- 均线金叉 + 放量确认标记 ----
-  // 短期均线（5/10）上穿长期均线（20/60），且当日成交量 > 1.2 × 20日均量
-  const crossMarkers = [];
-  const shortKeys = ['ma5', 'ma10'];
-  const longKeys = ['ma20', 'ma60'];
-  for (let i = 1; i < dailyBars.length; i++) {
-    const cur = dailyBars[i], prev = dailyBars[i - 1];
-    if (cur.vol_ma20 == null || cur.volume == null) continue;
-    const volConfirm = cur.volume > cur.vol_ma20 * 1.2;
-    if (!volConfirm) continue;
-    for (const sk of shortKeys) {
-      for (const lk of longKeys) {
-        if (cur[sk] == null || cur[lk] == null || prev[sk] == null || prev[lk] == null) continue;
-        // 上穿：前一天短线 <= 长线，今天短线 > 长线
-        if (prev[sk] <= prev[lk] && cur[sk] > cur[lk]) {
-          crossMarkers.push({
-            time: cur.date,
-            position: 'belowBar',
-            color: '#4caf50',
-            shape: 'text',
-            text: '✓',
-            size: 1,
-          });
-          break; // 同一天只标一个
-        }
-      }
-      if (crossMarkers.length && crossMarkers[crossMarkers.length - 1].time === cur.date) break;
-    }
-  }
-  crossMarkers.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
-  candleSeries.setMarkers(crossMarkers);
-
   // 成交量（叠加在K线图底部）
   const volumeSeries = kChart.addHistogramSeries({
     priceFormat: { type: 'volume' },
