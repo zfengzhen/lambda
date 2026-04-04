@@ -158,6 +158,7 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap" class="sec-title">
     <span>每周策略</span>
     <div id="tierFilter" style="display:inline-flex;gap:4px;font-size:12px"></div>
+    <span class="filter-chip active" id="skipToggle" style="color:#78909c;border-color:#78909c" onclick="toggleSkip()">隐藏暂停周</span>
   </div>
   <div class="print-only" style="display:none;color:#8b95a5;font-size:14px;margin:16px 0 8px">最近 8 周策略</div>
   <div style="overflow-x:auto">
@@ -226,7 +227,7 @@ function renderOverview(summary, tiers) {
     const tc = TIER_COLORS[k];
     const rateCls = t.safe_rate >= 100 ? '#4caf50' : t.safe_rate >= 80 ? '#ffc107' : '#ef5350';
     const extra = t.count > t.settled ? ' (含进行中)' : '';
-    return `<div class="tier-card" style="background:${tc.bg}">
+    return `<div class="tier-card" style="background:${tc.bg};cursor:pointer" onclick="filterByTier('${k}')">
       <span class="tn" style="color:${tc.color}">${k} ${t.name}</span>
       <span class="tv" style="color:${rateCls}">${t.safe_count}/${t.settled} ${t.safe_rate}%</span>
       <span class="td">${t.otm}%OTM | ${t.count}笔${extra}</span>
@@ -330,14 +331,14 @@ function buildDecisionHtml(data, title) {
           '</div>';
       })()}
       ${data.option_symbol && !data.skip ? `<div style="text-align:center;margin-top:12px">
-        <div style="color:#4fc3f7;font-size:15px;font-weight:bold">${data.option_symbol}</div>
+        <div style="color:#4fc3f7;font-size:15px;font-weight:bold">${data.option_symbol}${data.option_price != null ? `<span style="color:#ce93d8;margin-left:12px">$${data.option_price.toFixed(2)}</span>` : ''}</div>
       </div>` : ''}
     </div>`;
 }
 
 /* ===== 渲染：最新决策 ===== */
 function renderDecision(latest, otm) {
-  document.getElementById('latestDecision').innerHTML = buildDecisionHtml(latest, '最新决策');
+  document.getElementById('latestDecision').innerHTML = buildDecisionHtml(latest, '决策');
 }
 
 /* ===== 渲染：日K + MACD 图表（lightweight-charts） ===== */
@@ -628,6 +629,28 @@ function toggleTier(t) {
   renderTable(currentWeeks);
 }
 
+/* ===== 点击层级卡片筛选 ===== */
+function filterByTier(t) {
+  const allTiers = ['A','B1','B2','B3','B4','C1','C2','C3','C4'];
+  // 若当前只激活了该层级，则恢复全部
+  if (activeTiers.size === 1 && activeTiers.has(t)) {
+    allTiers.forEach(x => activeTiers.add(x));
+  } else {
+    activeTiers.clear();
+    activeTiers.add(t);
+  }
+  renderFilter();
+  renderTable(currentWeeks);
+}
+
+/* ===== 隐藏暂停周 ===== */
+let hideSkip = false;
+function toggleSkip() {
+  hideSkip = !hideSkip;
+  document.getElementById('skipToggle').classList.toggle('active', hideSkip);
+  renderTable(currentWeeks);
+}
+
 /* ===== 排序状态 ===== */
 let sortKey = null;
 let sortDir = 'desc';
@@ -698,7 +721,7 @@ function miniCandles(preBars, postBars) {
 
 function renderTable(weeks) {
   currentWeeks = weeks;
-  let filtered = weeks.filter(w => activeTiers.has(w.tier || 'C'));
+  let filtered = weeks.filter(w => activeTiers.has(w.tier || 'C') && !(hideSkip && w.skip));
   if (sortKey) {
     filtered = [...filtered].sort((a, b) => {
       const va = a[sortKey] != null ? a[sortKey] : -Infinity;
@@ -784,7 +807,7 @@ function renderTable(weeks) {
       <td>${expiryCloseCell}</td>
       <td>${settleDiffCell}</td>
       <td>${safeCell}</td>
-      <td>${w.recovery_days != null ? `<span style="color:#ef5350;font-weight:bold">${w.recovery_days}</span><span style="color:#6b7b8d;font-size:10px">天</span>` : (w.safe_expiry === false ? `<span style="color:#ef5350">未恢复[${w.recovery_gap != null ? w.recovery_gap.toFixed(1) + '%' : '-'}]</span>` : '-')}</td>
+      <td>${w.recovery_days != null ? `<span style="color:#ef5350;font-weight:bold">${w.recovery_days}</span><span style="color:#6b7b8d;font-size:10px">天</span>` : (w.safe_expiry === false ? `<span style="color:#ef5350">未恢复[${w.recovery_gap != null ? w.recovery_gap.toFixed(1) + '%' : '-'}]</span>` : (isPending ? pendingText : '-'))}</td>
       <td>${w.iv != null ? `<span style="color:#ce93d8">${w.iv.toFixed(1)}%</span>` : '-'}</td>
     </tr>`;
   });
@@ -801,7 +824,7 @@ function renderTable(weeks) {
       hoverTimer = setTimeout(() => {
         const w = filtered[parseInt(tr.dataset.weekIdx)];
         if (!w || !w.rules) return;
-        tooltip.innerHTML = buildDecisionHtml(w, '当时决策');
+        tooltip.innerHTML = buildDecisionHtml(w, '决策');
         tooltip.classList.add('visible');
         positionTooltip(e, tooltip);
       }, 2000);

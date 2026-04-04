@@ -484,8 +484,13 @@ def query_option_on_date(ticker: str, entry_date: str, expiry_date: str,
     def _extract_strike(symbol: str) -> float:
         return int(symbol[-8:]) / 1000.0
 
-    # 取最接近目标 strike 的合约
-    best = min(rows, key=lambda r: abs(_extract_strike(r[0]) - strike))
+    # 取 strike ≤ 目标值且最接近的合约（向下匹配，确保实际 OTM ≥ 策略 OTM）
+    below = [r for r in rows if _extract_strike(r[0]) <= strike]
+    if below:
+        best = max(below, key=lambda r: _extract_strike(r[0]))
+    else:
+        # 无 ≤ 目标的合约时，退回最接近的
+        best = min(rows, key=lambda r: abs(_extract_strike(r[0]) - strike))
 
     vol = best[6] or 0
     vwap = round((best[4] + best[5] + best[3]) / 3, 4) if vol > 0 else best[5]
