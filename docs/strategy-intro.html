@@ -117,15 +117,15 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
       <span class="k">ELIF</span> <span class="c">DIF &lt; 0 AND Close &gt; P30_PP</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B2 超跌支撑 — 卖 8% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">MA20 &gt; MA60 AND DIF &lt; 0</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B3 趋势动能弱 — 卖 10% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ B3 趋势动能弱 — 卖 12% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| ≤ 10%</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C2 趋势延续 — 卖 15% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close ≥ MA20 AND |MA20偏离| &gt; 10%</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C3 过热追涨 — 卖 15% OTM Put</span><br><br>
       <span class="k">ELIF</span> <span class="c">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C1 跌势减速 — 卖 10% OTM Put</span><br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C1 跌势减速 — 卖 12% OTM Put</span><br><br>
       <span class="k">ELSE</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C4 加速下杀 — 卖 15% OTM Put</span>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="a">→ C4 加速下杀 — 卖 20% OTM Put</span>
     </div>
     <p style="text-align:center;font-size:13px;color:#546e7a;margin-top:10px">优先级自上而下，命中即停。</p>
   </div>
@@ -139,12 +139,12 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
         <tr><td style="color:#69f0ae;font-weight:bold">A 企稳双撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>信号最强，支撑最可靠</td></tr>
         <tr><td style="color:#b2ebf2;font-weight:bold">B1 回调均线</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>均线回踩，中期结构完好</td></tr>
         <tr><td style="color:#4dd0e1;font-weight:bold">B2 超跌支撑</td><td style="color:#c3e88d;font-weight:bold">8%</td><td>有 Pivot 支撑兜底</td></tr>
-        <tr><td style="color:#0097a7;font-weight:bold">B3 趋势动能弱</td><td style="color:#ffa726;font-weight:bold">10%</td><td>趋势尚存但动能衰减，适度保守</td></tr>
+        <tr><td style="color:#0097a7;font-weight:bold">B3 趋势动能弱</td><td style="color:#ffa726;font-weight:bold">12%</td><td>趋势尚存但动能衰减，适度保守</td></tr>
         <tr><td style="color:#ffca28;font-weight:bold">B4 低波整理</td><td style="color:#f07178;font-weight:bold">15%</td><td>低波但方向不明，偏保守</td></tr>
-        <tr><td style="color:#ffa726;font-weight:bold">C1 跌势减速</td><td style="color:#ffa726;font-weight:bold">10%</td><td>空头衰减，底部可能形成，适度保守</td></tr>
+        <tr><td style="color:#ffa726;font-weight:bold">C1 跌势减速</td><td style="color:#ffa726;font-weight:bold">12%</td><td>空头衰减，底部可能形成，适度保守</td></tr>
         <tr><td style="color:#e57373;font-weight:bold">C2 趋势延续</td><td style="color:#f07178;font-weight:bold">15%</td><td>趋势运行中但缺少强支撑</td></tr>
         <tr><td style="color:#ef5350;font-weight:bold">C3 过热追涨</td><td style="color:#f07178;font-weight:bold">15%</td><td>短期超买，回调风险增大</td></tr>
-        <tr><td style="color:#e53935;font-weight:bold">C4 加速下杀</td><td style="color:#f07178;font-weight:bold">15%</td><td>最危险状态，下行动能增强</td></tr>
+        <tr><td style="color:#e53935;font-weight:bold">C4 加速下杀</td><td style="color:#f07178;font-weight:bold">20%</td><td>最危险状态，最大安全垫</td></tr>
       </tbody>
     </table>
   </div>
@@ -194,7 +194,7 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
       <div class="name"><span class="dot" style="background:#0097a7"></span><span style="color:#0097a7">B3 · 趋势动能弱</span></div>
       <div class="cond">MA20 &gt; MA60 AND DIF &lt; 0</div>
       <div class="meaning">趋势的骨架还在，但肌肉已松。均线多头排列是滞后指标，DIF 转负是领先信号——趋势可能正在转向。</div>
-      <div class="action" style="color:#0097a7">→ 卖 10% OTM Put</div>
+      <div class="action" style="color:#0097a7">→ 卖 12% OTM Put</div>
     </div>
 
     <div class="tier" style="background:#2b250d;border-color:#40381a">
@@ -208,7 +208,7 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
       <div class="name"><span class="dot" style="background:#ffa726"></span><span style="color:#ffa726">C1 · 跌势减速</span></div>
       <div class="cond">Close &lt; MA60 AND |MACD今| &lt; |MACD昨|</div>
       <div class="meaning">价格跌破中期均线，但 MACD 柱在缩小，空头力量正在衰减。底部可能正在形成。</div>
-      <div class="action" style="color:#ffa726">→ 卖 10% OTM Put</div>
+      <div class="action" style="color:#ffa726">→ 卖 12% OTM Put</div>
     </div>
 
     <div class="tier" style="background:#2b1a1a;border-color:#402828">
@@ -229,7 +229,7 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
       <div class="name"><span class="dot" style="background:#e53935"></span><span style="color:#e53935">C4 · 加速下杀</span></div>
       <div class="cond">Close &lt; MA60 AND |MACD今| ≥ |MACD昨|</div>
       <div class="meaning">价格跌破中期均线且下行动能还在增强，是最危险的市场状态。</div>
-      <div class="action" style="color:#e53935">→ 卖 15% OTM Put</div>
+      <div class="action" style="color:#e53935">→ 卖 20% OTM Put — 最危险状态，最大安全垫</div>
     </div>
 
   </div>
@@ -287,7 +287,7 @@ table.otm td{padding:10px 14px;border-bottom:1px solid #1a2332}
 
   <div class="memo">
     <strong>关于 OTM 分层</strong><br>
-    A/B1/B2 用 8%（信号较强，支撑可靠），B3/C1 用 10%（趋势在但动能弱或跌势减速），B4 和 C2-C4 用 15%（偏保守）。参数根据标的杠杆倍数自动缩放。
+    A/B1/B2 用 8%（信号较强，支撑可靠），B3/C1 用 12%（动能弱或跌势减速），B4/C2/C3 用 15%（偏保守），C4 用 20%（最危险状态，最大安全垫）。参数根据标的杠杆倍数自动缩放。
   </div>
 
   <div class="memo">
