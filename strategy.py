@@ -16,11 +16,11 @@ import pandas as pd
 
 # ---- 策略常量 ----
 # 基准 OTM（3 倍杠杆标的的默认值）
-# A/B1/B3/B4 为 8%，B2/C1-C4 为 15%
+# A/B1/B2 为 8%，B3/C1 为 10%，B4/C2-C4 为 12%
 DEFAULT_OTM = {
     "A": 0.08,
-    "B1": 0.08, "B2": 0.15, "B3": 0.08, "B4": 0.10,
-    "C1": 0.15, "C2": 0.15, "C3": 0.15, "C4": 0.15,
+    "B1": 0.08, "B2": 0.08, "B3": 0.10, "B4": 0.12,
+    "C1": 0.10, "C2": 0.12, "C3": 0.12, "C4": 0.12,
 }
 
 # 已知杠杆 ETF 倍数映射；不在此表中的标的默认 1 倍
@@ -33,8 +33,8 @@ LEVERAGE_MAP = {
 # 层级中文名
 TIER_NAMES = {
     "A": "企稳双撑",
-    "B1": "回调均线", "B2": "低波整理", "B3": "超跌支撑", "B4": "趋势动能弱",
-    "C1": "趋势延续", "C2": "过热追涨", "C3": "跌势减速", "C4": "加速下杀",
+    "B1": "回调均线", "B2": "超跌支撑", "B3": "趋势动能弱", "B4": "低波整理",
+    "C1": "跌势减速", "C2": "趋势延续", "C3": "过热追涨", "C4": "加速下杀",
 }
 
 ALL_TIERS = ["A", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4"]
@@ -114,15 +114,15 @@ def classify_tier(row: dict) -> str:
     所需字段：close, macd, prev_macd, pivot_5_pp, pivot_30_pp,
               ma20, ma60, dif, hist_vol
 
-    层级：
+    层级（按判定优先级排列）：
       A  企稳双撑    |MACD_today| < |MACD_yesterday| AND Close > P5_PP AND Close > P30_PP
       B1 回调均线    Close < MA20 AND Close > MA60
-      B2 低波整理    hist_vol < 50 AND |MA20距离| <= 4.5%
-      B3 超跌支撑    DIF < 0 AND Close > P30_PP
-      B4 趋势动能弱  MA20 > MA60 AND DIF < 0
-      C1 趋势延续    Close >= MA20 AND |MA20偏离| <= 10%
-      C2 过热追涨    Close >= MA20 AND |MA20偏离| > 10%
-      C3 跌势减速    Close < MA60 AND |MACD| < |prev_MACD|（MACD 收窄）
+      B4 低波整理    hist_vol < 50 AND |MA20距离| <= 4.5%
+      B2 超跌支撑    DIF < 0 AND Close > P30_PP
+      B3 趋势动能弱  MA20 > MA60 AND DIF < 0
+      C2 趋势延续    Close >= MA20 AND |MA20偏离| <= 10%
+      C3 过热追涨    Close >= MA20 AND |MA20偏离| > 10%
+      C1 跌势减速    Close < MA60 AND |MACD| < |prev_MACD|（MACD 收窄）
       C4 加速下杀    Close < MA60 AND |MACD| >= |prev_MACD|（MACD 放大）
     """
     close = row["close"]
@@ -143,29 +143,29 @@ def classify_tier(row: dict) -> str:
     if close < ma20 and close > ma60:
         return "B1"
 
-    # B2 低波整理
+    # B4 低波整理
     ma20_dist = abs((close - ma20) / ma20 * 100)
     if hist_vol < 50 and ma20_dist <= 4.5:
+        return "B4"
+
+    # B2 超跌支撑
+    if dif < 0 and close > p30_pp:
         return "B2"
 
-    # B3 超跌支撑
-    if dif < 0 and close > p30_pp:
-        return "B3"
-
-    # B4 趋势动能弱
+    # B3 趋势动能弱
     if ma20 > ma60 and dif < 0:
-        return "B4"
+        return "B3"
 
     # ── C 类细分 ──
     if close >= ma20:
         if ma20_dist > 10:
-            return "C2"  # 过热追涨：价远超 MA20，超买回调风险大
-        return "C1"  # 趋势延续：价在 MA20 上方但偏离合理
+            return "C3"  # 过热追涨：价远超 MA20，超买回调风险大
+        return "C2"  # 趋势延续：价在 MA20 上方但偏离合理
     if close < ma60:
         if abs(macd) < abs(prev_macd):
-            return "C3"  # 跌势减速：MACD 收窄，空头力度递减
+            return "C1"  # 跌势减速：MACD 收窄，空头力度递减
         return "C4"  # 加速下杀：MACD 放大，下行动能增强
-    return "C1"  # 极少出现的 MA60 ≤ Close < MA20 边缘态
+    return "C2"  # 极少出现的 MA60 ≤ Close < MA20 边缘态
 
 
 def _extract_rules(row: dict) -> dict:

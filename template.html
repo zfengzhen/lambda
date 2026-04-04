@@ -156,18 +156,19 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
 
   <!-- 逐周明细 -->
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap" class="sec-title">
-    <span>逐周操作明细</span>
+    <span>每周策略</span>
     <div id="tierFilter" style="display:inline-flex;gap:4px;font-size:12px"></div>
   </div>
-  <div class="print-only" style="display:none;color:#8b95a5;font-size:14px;margin:16px 0 8px">最近 8 周操作明细</div>
+  <div class="print-only" style="display:none;color:#8b95a5;font-size:14px;margin:16px 0 8px">最近 8 周策略</div>
   <div style="overflow-x:auto">
     <table class="weekly">
       <thead><tr>
         <th data-tip="每周首个交易日（通常为周一）">日期</th>
-        <th data-tip="策略分层：A 企稳双撑 / B1-B4 弱势守底 / C1 趋势延续 / C2 过热追涨 / C3 跌势减速 / C4 加速下杀">层级</th>
+        <th data-tip="策略分层：A 企稳双撑 / B1 回调均线 / B2 超跌支撑 / B3 趋势动能弱 / B4 低波整理 / C1 跌势减速 / C2 趋势延续 / C3 过热追涨 / C4 加速下杀">层级</th>
         <th data-tip="Out of The Money，虚值程度">OTM</th>
         <th data-tip="入场日收盘价">收盘</th>
         <th data-tip="行权价向下取整对应的Put期权合约（含DTE天数）">期权合约</th>
+        <th data-tip="入场日该期权合约的收盘价（权利金）">权利金</th>
         <th data-tip="入场日到到期日的日K蜡烛图">日K</th>
         <th data-tip="到期日收盘价（非交易日取前一个交易日），点击排序" data-sort="expiry_close" class="sortable">到期价</th>
         <th data-tip="(到期价 - 行权价) / 行权价 × 100%，正=未被行权，负=被行权，点击排序" data-sort="settle_diff" class="sortable">结算差比</th>
@@ -191,17 +192,17 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
 <script>
 /* ===== 常量 ===== */
 const TIER_COLORS = {
-  A:  {color:'#4fc3f7', bg:'#0d1f2b'},
-  B1: {color:'#ab47bc', bg:'#1a0d2b'},
-  B2: {color:'#ff7043', bg:'#2b1a0d'},
-  B3: {color:'#66bb6a', bg:'#0d2b1a'},
-  B4: {color:'#ffa726', bg:'#2b200d'},
-  C1: {color:'#90a4ae', bg:'#1a2028'},
-  C2: {color:'#ef5350', bg:'#2b0d0d'},
-  C3: {color:'#26c6da', bg:'#0d2b2b'},
+  A:  {color:'#69f0ae', bg:'#0d2b1a'},
+  B1: {color:'#b2ebf2', bg:'#0d2228'},
+  B2: {color:'#4dd0e1', bg:'#0d1f25'},
+  B3: {color:'#0097a7', bg:'#0d191f'},
+  B4: {color:'#ffca28', bg:'#2b250d'},
+  C1: {color:'#ffa726', bg:'#2b200d'},
+  C2: {color:'#e57373', bg:'#2b1a1a'},
+  C3: {color:'#ef5350', bg:'#2b0d0d'},
   C4: {color:'#e53935', bg:'#2b0d0d'}
 };
-const TIER_NAMES = {A:'企稳双撑',B1:'回调均线',B2:'低波整理',B3:'超跌支撑',B4:'趋势动能弱',C1:'趋势延续',C2:'过热追涨',C3:'跌势减速',C4:'加速下杀'};
+const TIER_NAMES = {A:'企稳双撑',B1:'回调均线',B2:'超跌支撑',B3:'趋势动能弱',B4:'低波整理',C1:'跌势减速',C2:'趋势延续',C3:'过热追涨',C4:'加速下杀'};
 const activeTiers = new Set(['A','B1','B2','B3','B4','C1','C2','C3','C4']);
 let currentWeeks = [];
 
@@ -258,20 +259,20 @@ function buildDecisionHtml(data, title) {
   const b1_pass = b1_c1 && b1_c2;
   const b1Desc = `Close ${fmt(close)} ${b1_c1 ? '<' : '>'} MA20 ${fmt(r.ma20)} & ${b1_c2 ? '>' : '<'} MA60 ${fmt(r.ma60)}`;
 
-  const b2_c1 = r.hist_vol < 50;
-  const b2_c2 = Math.abs(r.ma20_dist) <= 4.5;
+  const b2_c1 = r.dif < 0;
+  const b2_c2 = close > r.p30_pp;
   const b2_pass = b2_c1 && b2_c2;
-  const b2Desc = `Vol ${fmt(r.hist_vol,1)}% ${b2_c1 ? '<' : '>'} 50% & |MA20距| ${fmt(Math.abs(r.ma20_dist),2)}% ${b2_c2 ? '<=' : '>'} 4.5%`;
+  const b2Desc = `DIF ${fmt(r.dif)} ${b2_c1 ? '<' : '>'} 0 & Close ${fmt(close)} ${b2_c2 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
 
-  const b3_c1 = r.dif < 0;
-  const b3_c2 = close > r.p30_pp;
+  const b3_c1 = r.ma20 > r.ma60;
+  const b3_c2 = r.dif < 0;
   const b3_pass = b3_c1 && b3_c2;
-  const b3Desc = `DIF ${fmt(r.dif)} ${b3_c1 ? '<' : '>'} 0 & Close ${fmt(close)} ${b3_c2 ? '>' : '<'} P30_PP ${fmt(r.p30_pp)}`;
+  const b3Desc = `MA20 ${fmt(r.ma20)} ${b3_c1 ? '>' : '<'} MA60 ${fmt(r.ma60)} & DIF ${fmt(r.dif)} ${b3_c2 ? '<' : '>'} 0`;
 
-  const b4_c1 = r.ma20 > r.ma60;
-  const b4_c2 = r.dif < 0;
+  const b4_c1 = r.hist_vol < 50;
+  const b4_c2 = Math.abs(r.ma20_dist) <= 4.5;
   const b4_pass = b4_c1 && b4_c2;
-  const b4Desc = `MA20 ${fmt(r.ma20)} ${b4_c1 ? '>' : '<'} MA60 ${fmt(r.ma60)} & DIF ${fmt(r.dif)} ${b4_c2 ? '<' : '>'} 0`;
+  const b4Desc = `Vol ${fmt(r.hist_vol,1)}% ${b4_c1 ? '<' : '>'} 50% & |MA20距| ${fmt(Math.abs(r.ma20_dist),2)}% ${b4_c2 ? '<=' : '>'} 4.5%`;
 
   const tierLabel = `${data.tier} ${TIER_NAMES[data.tier] || ''}`;
 
@@ -283,28 +284,31 @@ function buildDecisionHtml(data, title) {
         <span style="color:#e8ecf1;font-size:22px;font-weight:bold;margin-left:8px">${fmt(close)}</span>
       </div>
       <table class="rule-table">
-        ${row('A 企稳双撑', '#4fc3f7', macdDesc, r.macd_narrow)}
-        ${row('', '#4fc3f7', p5Desc, r.above_p5)}
-        ${row('', '#4fc3f7', p30Desc, r.above_p30)}
-        ${row('B1 回调均线', '#ab47bc', b1Desc, b1_pass)}
-        ${row('B2 低波整理', '#ff7043', b2Desc, b2_pass)}
-        ${row('B3 超跌支撑', '#66bb6a', b3Desc, b3_pass)}
-        ${row('B4 趋势动能弱', '#ffa726', b4Desc, b4_pass)}
+        ${row('A ' + TIER_NAMES.A, TIER_COLORS.A.color, macdDesc, r.macd_narrow)}
+        ${row('', TIER_COLORS.A.color, p5Desc, r.above_p5)}
+        ${row('', TIER_COLORS.A.color, p30Desc, r.above_p30)}
+        ${row('B1 ' + TIER_NAMES.B1, TIER_COLORS.B1.color, b1Desc, b1_pass)}
+        ${row('B2 ' + TIER_NAMES.B2, TIER_COLORS.B2.color, b2Desc, b2_pass)}
+        ${row('B3 ' + TIER_NAMES.B3, TIER_COLORS.B3.color, b3Desc, b3_pass)}
+        ${row('B4 ' + TIER_NAMES.B4, TIER_COLORS.B4.color, b4Desc, b4_pass)}
         ${(() => {
           if (!data.tier || !data.tier.startsWith('C')) return '';
           const aboveMa20 = close >= r.ma20;
           const aboveMa60 = r.above_ma60 !== undefined ? r.above_ma60 : close >= r.ma60;
           const ma20Abs = Math.abs(r.ma20_dist);
           const overextend = ma20Abs > 10;
+          const cColor = TIER_COLORS[data.tier] ? TIER_COLORS[data.tier].color : '#ff8a80';
           if (aboveMa20) {
-            return row('C 价格≥MA20', '#90a4ae',
+            const subTier = overextend ? 'C3' : 'C2';
+            return row('C 兜底观望', cColor,
               'Close ' + fmt(close) + (aboveMa20 ? ' ≥ ' : ' < ') + 'MA20 ' + fmt(r.ma20) + ' | |偏离| ' + fmt(ma20Abs,1) + '% ' + (overextend ? '>' : '≤') + ' 10%', true)
-              + row(overextend ? 'C2 过热追涨' : 'C1 趋势延续', overextend ? '#ef5350' : '#90a4ae',
+              + row(subTier + ' ' + TIER_NAMES[subTier], TIER_COLORS[subTier].color,
               overextend ? '偏离过大，超买回调风险' : '偏离合理，趋势延续中', true);
           } else if (!aboveMa60) {
-            return row('C 价格<MA60', '#90a4ae',
+            const subTier = r.macd_narrow ? 'C1' : 'C4';
+            return row('C 兜底观望', cColor,
               'Close ' + fmt(close) + ' < MA60 ' + fmt(r.ma60), true)
-              + row(r.macd_narrow ? 'C3 跌势减速' : 'C4 加速下杀', r.macd_narrow ? '#26c6da' : '#e53935',
+              + row(subTier + ' ' + TIER_NAMES[subTier], TIER_COLORS[subTier].color,
               r.macd_narrow ? 'MACD 收窄，空头力度递减' : 'MACD 放大，下行动能增强', true);
           }
           return '';
@@ -319,7 +323,7 @@ function buildDecisionHtml(data, title) {
         }
         const tc = TIER_COLORS[data.tier] || TIER_COLORS['C1'];
         const cc = tc.color;
-        const cls = (data.tier === 'C2' || data.tier === 'C4') ? 'conclusion-skip' : 'conclusion-sell';
+        const cls = (data.tier === 'C3' || data.tier === 'C4') ? 'conclusion-skip' : 'conclusion-sell';
         return '<div class="' + cls + '">' +
           '<span style="color:' + cc + ';font-size:16px;font-weight:bold">' + tierLabel + '</span>' +
           '<span style="color:' + cc + ';font-weight:bold;margin-left:12px">' + data.otm + '% OTM</span>' +
@@ -612,10 +616,10 @@ function renderCharts(dailyBars) {
 /* ===== 过滤器 ===== */
 function renderFilter() {
   const tiers = ['A','B1','B2','B3','B4','C1','C2','C3','C4'];
-  const colors = {A:'#4fc3f7',B1:'#ab47bc',B2:'#ff7043',B3:'#66bb6a',B4:'#ffa726',C1:'#90a4ae',C2:'#ef5350',C3:'#26c6da',C4:'#e53935'};
   document.getElementById('tierFilter').innerHTML = tiers.map(t => {
+    const c = TIER_COLORS[t].color;
     const cls = activeTiers.has(t) ? 'active' : '';
-    return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${colors[t]};border-color:${colors[t]}" onclick="toggleTier('${t}')">${t}</span>`;
+    return `<span class="filter-chip ${cls}" data-tier="${t}" style="color:${c};border-color:${c}" onclick="toggleTier('${t}')">${t}</span>`;
   }).join('');
 }
 function toggleTier(t) {
@@ -775,6 +779,7 @@ function renderTable(weeks) {
       <td>${w.otm != null ? w.otm + '%' : '-'}</td>
       <td>${fmt(w.close)}</td>
       <td>${optCell}</td>
+      <td>${w.option_price != null ? `<span style="color:#ce93d8">$${w.option_price.toFixed(2)}</span>` : (isPending ? pendingText : '-')}</td>
       <td>${miniCandles(w.pre_bars, w.post_bars)}</td>
       <td>${expiryCloseCell}</td>
       <td>${settleDiffCell}</td>
@@ -896,7 +901,7 @@ function exportPng() {
 
   const label = document.createElement('div');
   label.style.cssText = 'color:#8b95a5;font-size:14px;margin:16px 0 8px';
-  label.textContent = '最近 8 周操作明细';
+  label.textContent = '最近 8 周策略';
   tmp.appendChild(label);
 
   const tableWrap = document.createElement('div');
