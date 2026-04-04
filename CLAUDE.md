@@ -119,25 +119,11 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - **equity_bars 存储前复权价格**：`adjusted=true` 由 API 返回，DB 中不是原始价格。每次新拆股事件会触发全量重拉，获取最新复权基准。
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
-- **OTM 模型为 per-tier dict**：`DEFAULT_OTM` 是 `dict[str, float]`，每个层级独立映射 OTM 值。`get_otm_for_ticker()` 返回 dict（非 tuple）。A/B1/B2 为 8% OTM，B3/C1 为 12% OTM，B4/C2/C3 为 15% OTM，C4 为 20% OTM。
-- **classify_tier 返回 C1-C4**：不再返回 `"C"`，而是 `"C1"`（跌势减速）、`"C2"`（趋势延续）、`"C3"`（过热追涨）、`"C4"`（加速下杀）。C 子分类基于 Close vs MA20/MA60 和 MACD 收窄/放大。
 - **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。该函数只清目标 ticker 的 `option_month` sync_log，不影响其他 ticker 的同步状态。
-- **option_bars 新增结构化列**：`strike`/`expiration`/`option_type` 在入库时从 OCC symbol 解析填入。存量数据由 `init_db()` 自动回填。
 - **IV 计算依赖 scipy**：`iv.py` 使用 `scipy.stats.norm` 做 B-S 定价，需 `pip install scipy`。
 - **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法，与 VIX 方法论一致。
-- **连续弱势熔断规则**：在 `run.py` 的 `compute_strategy` 中实现，标记 `skip=True` 的周暂停 Sell Put。前 2 周连续 C 类且本周也是 C 类时触发判断（本周是 A/B 类始终放行）：
-  - 本周 C 类但非 C1：趋势没有减速迹象（C2 还在涨但不稳、C3 过热、C4 加速下杀），风险未收敛，暂停
-  - 本周 C1 + 前 2 周有 C1：跌势已连续收窄（MACD 收窄出现过至少 2 次），空头力量持续衰减，底部信号较可靠，继续卖出
-  - 本周 C1 + 前 2 周无 C1：之前都是 C2/C3/C4 纯弱势，本周才首次出现减速，可能只是下跌中继的短暂喘息而非真正见底，不够安全，暂停
-  - 核心思路：单次 C1 减速不可信，连续减速才可信；A/B 类已有支撑条件，不受熔断影响
 - **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。OCC strike 判定为平稳到期时，同步清除 `recovery_days` 和 `recovery_gap`，避免策略 strike 与 OCC strike 微小差异导致残留。
 - **期权合约向下匹配**：`query_option_on_date` 取 strike ≤ 策略目标值且最接近的合约，确保实际 OTM ≥ 策略要求。当合约 strike 间距较大（如 TQQQ $5 间距）时，实际 OTM 可能显著大于策略值。
-- **EXPIRY_WEEKS = 4**：到期周数为 4 周（原为 3 周）。`find_expiry_date` 基于 NYSE 交易日历向前推 4 周取最近的周五。
-- **market 行情快照字段**：`run.py` 输出 JSON 的 `market` 包含最新收盘价、日涨跌幅（vs 前一日收盘）、IV，以及 `active_contracts`（所有 pending 且未 skip 的合约）。合约的 `pre_bars`/`post_bars` 复用 weeks 中的数据，用于 mini 日K 渲染。
-- **daily_bars 为 60 个交易日**：`df.tail(60)` 取最近 60 天数据供日K/MACD/IV 图表使用。
-- **template.html 无决策面板**：决策规则展示已移至逐行悬浮面板（`buildDecisionHtml` + tooltip），主页面为行情快照条 + 合约表格 + 全宽图表。
-- **miniCandles 固定槽位**：`miniCandles` 使用固定宽度（左 21 根 + 右 20 根），pre_bars 右对齐到分隔线，确保所有行的竖线居中对齐。修改槽位数需同步调整 `maxPre`/`maxPost`。
-- **latest 含 option_strike/option_expiry**：`run.py` 在查询 latest 合约时同步写入 OCC 真实 strike 数值和到期日，供 `market.active_contracts` 使用。
 
 ## 开发与提交规范
 
