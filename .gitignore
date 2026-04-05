@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 output/*.json
 output/*.html
+!output/template.html
 output/*.png
 output/flat_files_cache/
 output/*.duckdb
