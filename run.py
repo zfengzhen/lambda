@@ -94,6 +94,7 @@ def enrich_weeks_with_options(ticker: str, weeks: list[dict], daily: pd.DataFram
             occ_strike_str = str(int(occ_strike)) if occ_strike == int(occ_strike) else str(occ_strike)
             premium = round(opt["close"], 2)
             w["option_symbol"] = f"{ticker} {occ_expiry} P{occ_strike_str}"
+            w["option_strike"] = occ_strike
             w["option_dte"] = dte
             w["option_price"] = premium
             w["option_vwap"] = round(opt["vwap"], 4)
@@ -121,6 +122,7 @@ def enrich_weeks_with_options(ticker: str, weeks: list[dict], daily: pd.DataFram
                         w["recovery_gap"] = round((latest_close - occ_strike) / occ_strike * 100, 1)
         else:
             w["option_symbol"] = None
+            w["option_strike"] = None
             w["option_dte"] = None
             w["option_price"] = None
             w["option_vwap"] = None
@@ -281,6 +283,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
                     "price": w.get("option_price"),
                     "strike": strike_val,
                     "expiry": w.get("expiry_date"),
+                    "dte": w.get("option_dte"),
                     "pre_bars": w.get("pre_bars", []),
                     "post_bars": w.get("post_bars", []),
                 })
@@ -301,6 +304,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
                     "price": latest.get("option_price"),
                     "strike": strike_val,
                     "expiry": latest.get("option_expiry"),
+                    "dte": latest.get("option_dte"),
                     "pre_bars": matched_w.get("pre_bars", []),
                     "post_bars": matched_w.get("post_bars", []),
                 })

@@ -34,8 +34,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 └── docs/                # 文档 + API 参考
     ├── api/             # API 文档（Massive 等）
     ├── superpowers/     # 实现计划与设计文档
-    ├── strategy-*.md/html  # 策略说明文档
-    └── entry-timing-research.md  # 入场限价优化研究报告
+    ├── strategy-*.md/html  # 策略说明与研究文档
+    ├── entry-timing-research.md  # 入场限价优化研究报告
+    └── scheduled-notify.md       # 定时通知方案文档
 ```
 
 ## 数据流

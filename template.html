@@ -169,6 +169,7 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
     <span>每周策略</span>
     <div id="tierFilter" style="display:inline-flex;gap:4px;font-size:12px"></div>
     <span class="filter-chip active" id="skipToggle" style="color:#78909c;border-color:#78909c" onclick="toggleSkip()">隐藏暂停周</span>
+    <span class="filter-chip" id="resetFilter" style="color:#90a4ae;border-color:#90a4ae" onclick="resetFilters()">重置</span>
   </div>
   <div class="print-only" style="display:none;color:#8b95a5;font-size:14px;margin:16px 0 8px">最近 8 周策略</div>
   <div style="overflow-x:auto">
@@ -360,6 +361,9 @@ function renderMarketBar(market) {
   if (contracts.length > 0) {
     const today = new Date();
     const td = 'padding:5px 8px;border-bottom:1px solid #1a2332';
+    // 合约区全局最大 DTE，统一 mini 日K 右侧槽位宽度
+    // 右侧槽位数 = 最大 post_bars 长度（实际交易日，非日历天）
+    const contractMaxPost = Math.max(...contracts.map(c => (c.post_bars || []).length), 1);
     const rows = contracts.map((c, i) => {
       const expiry = new Date(c.expiry + 'T00:00:00');
       const dte = Math.max(0, Math.ceil((expiry - today) / 86400000));
@@ -375,7 +379,7 @@ function renderMarketBar(market) {
         <td style="${td};text-align:right;color:#ce93d8;font-weight:bold">${c.price != null ? '$' + c.price.toFixed(2) : '-'}</td>
         <td style="${td};text-align:right;color:#ffc107">${dte}</td>
         <td class="${sCls}" style="${td};text-align:right;font-weight:bold">${sSign}${strikeDiff.toFixed(2)}%</td>
-        <td style="${td};text-align:center;padding-right:14px">${miniCandles(c.pre_bars || [], c.post_bars || [])}</td>
+        <td style="${td};text-align:center;padding-right:14px">${miniCandles(c.pre_bars || [], c.post_bars || [], contractMaxPost, c.strike)}</td>
       </tr>`;
     }).join('');
     const th = 'padding:4px 8px;border-bottom:1px solid #253044';
@@ -696,6 +700,16 @@ function toggleSkip() {
   renderTable(currentWeeks);
 }
 
+/* ===== 重置过滤 ===== */
+function resetFilters() {
+  const allTiers = ['A','B1','B2','B3','B4','C1','C2','C3','C4'];
+  allTiers.forEach(t => activeTiers.add(t));
+  hideSkip = false;
+  document.getElementById('skipToggle').classList.remove('active');
+  renderFilter();
+  renderTable(currentWeeks);
+}
+
 /* ===== 排序状态 ===== */
 let sortKey = null;
 let sortDir = 'desc';
@@ -725,19 +739,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ===== 渲染：逐周表格 ===== */
 /* 迷你蜡烛图 SVG：左=入场前20天+入场日，竖线分隔，右=入场后到到期日 */
-function miniCandles(preBars, postBars) {
+function miniCandles(preBars, postBars, globalMaxPost, strike) {
   if ((!preBars || preBars.length === 0) && (!postBars || postBars.length === 0)) return '-';
   const pre = preBars || [], post = postBars || [];
   const all = [...pre, ...post];
   const gap = 1, bw = 2, sepW = 3;
-  const maxPre = 21, maxPost = 20; // 固定槽位：左21根 + 右20根
+  const maxPre = 21;
+  // 右侧槽位数由全局最大 DTE 统一，保持分隔线对齐
+  const maxPost = globalMaxPost || post.length;
   const fixedW = (maxPre + maxPost) * (bw + gap) + gap + sepW;
   const H = 28, pad = 2;
   const allHL = all.flatMap(b => [b.h, b.l]);
+  // strike 纳入 Y 轴范围，确保虚线始终可见
+  if (strike != null) allHL.push(strike);
   const hi = Math.max(...allHL), lo = Math.min(...allHL);
   const range = hi - lo || 1;
   const y = v => pad + (hi - v) / range * (H - pad * 2);
   let svg = `<svg width="${fixedW}" height="${H}" style="vertical-align:middle">`;
+  // strike 黄色虚线：从分隔线到该行 post_bars 实际长度
+  const strikeLineX = gap + maxPre * (bw + gap);
+  if (strike != null) {
+    const strikeLineEnd = strikeLineX + sepW + post.length * (bw + gap);
+    const sy = y(strike);
+    svg += `<line x1="${strikeLineX}" y1="${sy}" x2="${strikeLineEnd}" y2="${sy}" stroke="#ffc107" stroke-width="1" stroke-dasharray="3,2" opacity="0.7"/>`;
+  }
   // 左侧：右对齐到分隔线，不足的左侧留空
   const preOffset = (maxPre - pre.length) * (bw + gap);
   pre.forEach((b, i) => {
@@ -776,6 +801,8 @@ function renderTable(weeks) {
     });
   }
   const today = new Date(); today.setHours(0,0,0,0);
+  // 右侧槽位数 = 最大 post_bars 长度（实际交易日，非日历天）
+  const globalMaxPost = Math.max(...filtered.map(w => (w.post_bars || []).length), 1);
   const rows = filtered.map((w, idx) => {
     const isPending = w.pending === true;
     const tc = TIER_COLORS[w.tier];
@@ -848,7 +875,7 @@ function renderTable(weeks) {
       <td>${fmt(w.close)}</td>
       <td>${optCell}</td>
       <td>${w.option_price != null ? `<span style="color:#ce93d8">$${w.option_price.toFixed(2)}</span>` : (isPending ? pendingText : '-')}</td>
-      <td>${miniCandles(w.pre_bars, w.post_bars)}</td>
+      <td>${miniCandles(w.pre_bars, w.post_bars, globalMaxPost, w.option_strike)}</td>
       <td>${expiryCloseCell}</td>
       <td>${settleDiffCell}</td>
       <td>${safeCell}</td>
