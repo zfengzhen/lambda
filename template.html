@@ -16,7 +16,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .box h3{color:#4fc3f7;font-size:17px;margin-bottom:14px}
 
 /* 统计+层级合并为一行 */
-.overview-row{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;align-items:stretch}
+.overview-row{display:flex;gap:6px;margin-top:20px;margin-bottom:16px;flex-wrap:wrap;align-items:stretch}
 .overview-row .stat{background:#141b2d;border:1px solid #253044;border-radius:6px;padding:6px 12px;text-align:center;min-width:80px}
 .overview-row .stat .v{font-size:16px;font-weight:bold;display:block;line-height:1.2}
 .overview-row .stat .v.grn{color:#4caf50}.overview-row .stat .v.red{color:#ef5350}.overview-row .stat .v.gld{color:#ffc107}.overview-row .stat .v.blu{color:#4fc3f7}
@@ -121,19 +121,22 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
 }
 @media(max-width:600px){
   .overview-row .stat,.overview-row .tier-card{min-width:100%}
+  .market-bar{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .market-bar .mk-header{gap:8px 14px}
+  .market-bar .mk-date{font-size:14px}
+  .market-bar .mk-price{font-size:18px}
+  .market-bar table{font-size:11px;min-width:520px}
+  .market-bar table td,.market-bar table th{padding:4px 4px}
 }
 </style></head><body>
 <div class="container">
   <!-- 头部 -->
   <div class="header">
-    <h1>Lambda 策略系统</h1>
+    <h1>Lambda</h1>
     <span id="tickerName" style="color:#4fc3f7;font-size:20px;font-weight:bold"></span>
     <div style="flex:1"></div>
     <button onclick="exportPng()" style="background:#253044;color:#8b95a5;border:1px solid #2a3548;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">导出</button>
   </div>
-
-  <!-- 统计+层级一行 -->
-  <div class="overview-row" id="overviewRow"></div>
 
   <!-- 行情快照+图表 -->
   <div class="chart-panel">
@@ -157,6 +160,9 @@ tr.skip-row{background:transparent}tr.skip-row:hover{background:#141b2d}
       <div id="ivChart"></div>
     </div>
   </div>
+
+  <!-- 统计+层级一行 -->
+  <div class="overview-row" id="overviewRow"></div>
 
   <!-- 逐周明细 -->
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap" class="sec-title">
@@ -364,12 +370,12 @@ function renderMarketBar(market) {
       const rowBg = i === 0 ? 'background:rgba(79,195,247,0.08)' : '';
       return `<tr style="${rowBg}">
         <td style="${td};text-align:left;padding-left:14px;color:#c8d0dc;font-weight:bold">${c.date}</td>
-        <td style="${td};text-align:center"><span style="color:${tc.color};border:1px solid ${tc.color};border-radius:4px;padding:1px 6px;font-size:11px;font-weight:bold">${c.tier} ${c.otm}%</span> <span style="color:${tc.color};font-size:11px">${TIER_NAMES[c.tier] || ''}</span></td>
+        <td style="${td};text-align:center;white-space:nowrap"><span style="color:${tc.color};border:1px solid ${tc.color};border-radius:4px;padding:1px 6px;font-size:11px;font-weight:bold;white-space:nowrap">${c.tier} ${c.otm}%</span> <span style="color:${tc.color};font-size:11px">${TIER_NAMES[c.tier] || ''}</span></td>
         <td style="${td};text-align:left;color:#4fc3f7;font-weight:bold">${c.symbol}</td>
         <td style="${td};text-align:right;color:#ce93d8;font-weight:bold">${c.price != null ? '$' + c.price.toFixed(2) : '-'}</td>
         <td style="${td};text-align:right;color:#ffc107">${dte}</td>
-        <td style="${td};text-align:center">${miniCandles(c.pre_bars || [], c.post_bars || [])}</td>
-        <td class="${sCls}" style="${td};text-align:right;font-weight:bold;padding-right:14px">${sSign}${strikeDiff.toFixed(2)}%</td>
+        <td class="${sCls}" style="${td};text-align:right;font-weight:bold">${sSign}${strikeDiff.toFixed(2)}%</td>
+        <td style="${td};text-align:center;padding-right:14px">${miniCandles(c.pre_bars || [], c.post_bars || [])}</td>
       </tr>`;
     }).join('');
     const th = 'padding:4px 8px;border-bottom:1px solid #253044';
@@ -381,14 +387,14 @@ function renderMarketBar(market) {
         <th style="${th};text-align:left">合约</th>
         <th style="${th};text-align:right">权利金</th>
         <th style="${th};text-align:right">DTE</th>
-        <th style="${th};text-align:center">日K</th>
-        <th style="${th};text-align:right;padding-right:14px">涨跌幅</th>
+        <th style="${th};text-align:right">涨跌幅</th>
+        <th style="${th};text-align:center;padding-right:14px">日K</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
   el.innerHTML = `
-    <div style="display:flex;align-items:baseline;gap:20px;padding:10px 14px">
+    <div class="mk-header" style="display:flex;align-items:baseline;gap:20px;padding:10px 14px;flex-wrap:wrap">
       <span class="mk-date">${market.date}</span>
       <span class="mk-item">收盘价</span>
       <span class="mk-price">${market.close.toFixed(2)}</span>
