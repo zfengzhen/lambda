@@ -116,10 +116,6 @@ class TestBsImpliedVol:
         assert abs(iv - sigma) < 0.001
 
 
-import datetime
-from iv import select_contracts
-
-
 def _make_option_row(ticker, expiry, opt_type, strike, close, date):
     """构造一条 option_bars 风格的 dict（含已解析的结构化字段）。"""
     yy = expiry[2:4]
@@ -142,80 +138,22 @@ def _make_option_row(ticker, expiry, opt_type, strike, close, date):
     }
 
 
-class TestSelectContracts:
-    def setup_method(self):
-        """构造测试数据：spot=50, date=2026-04-03"""
-        self.date = "2026-04-03"
-        self.spot = 50.0
-        expiry_near = "2026-04-17"   # 14天后 — 近月
-        expiry_far = "2026-05-15"    # 42天后 — 远月
-        expiry_too_close = "2026-04-08"  # 5天后 — 应被排除
-
-        self.bars = []
-        for s in range(45, 56):
-            self.bars.append(_make_option_row("TEST", expiry_near, "P", float(s), 2.0, self.date))
-            self.bars.append(_make_option_row("TEST", expiry_near, "C", float(s), 2.0, self.date))
-        for s in range(45, 56):
-            self.bars.append(_make_option_row("TEST", expiry_far, "P", float(s), 3.0, self.date))
-            self.bars.append(_make_option_row("TEST", expiry_far, "C", float(s), 3.0, self.date))
-        for s in range(48, 53):
-            self.bars.append(_make_option_row("TEST", expiry_too_close, "P", float(s), 1.0, self.date))
-
-    def test_returns_two_expiries(self):
-        selected = select_contracts(self.bars, self.spot, self.date)
-        expiries = {c["expiration"] for c in selected}
-        assert len(expiries) == 2
-        assert "2026-04-08" not in expiries
-
-    def test_excludes_too_close_expiry(self):
-        selected = select_contracts(self.bars, self.spot, self.date)
-        for c in selected:
-            dte = (datetime.date.fromisoformat(c["expiration"])
-                   - datetime.date.fromisoformat(self.date)).days
-            assert dte > 7
-
-    def test_selects_atm_strikes(self):
-        selected = select_contracts(self.bars, self.spot, self.date)
-        for c in selected:
-            assert abs(c["strike"] - self.spot) <= 5
-
-    def test_includes_puts_and_calls(self):
-        selected = select_contracts(self.bars, self.spot, self.date)
-        types = {c["option_type"] for c in selected}
-        assert types == {"P", "C"}
-
-    def test_total_count_reasonable(self):
-        """2 expiries × 2 types × 4 strikes = 16"""
-        selected = select_contracts(self.bars, self.spot, self.date)
-        assert 8 <= len(selected) <= 24
-
-    def test_single_expiry_fallback(self):
-        bars_single = [b for b in self.bars if b["expiration"] == "2026-04-17"]
-        selected = select_contracts(bars_single, self.spot, self.date)
-        assert len(selected) > 0
-        expiries = {c["expiration"] for c in selected}
-        assert expiries == {"2026-04-17"}
-
-    def test_empty_bars_returns_empty(self):
-        selected = select_contracts([], self.spot, self.date)
-        assert selected == []
-
-
 from iv import compute_ticker_iv
 
 
 class TestComputeTickerIv:
-    def test_basic_computation(self):
-        """给定固定数据，验证 IV 在合理范围"""
+    def test_bracket_interpolation(self):
+        """包夹 30 天的近月/远月插值，验证 IV 在合理范围"""
         date = "2026-04-03"
         spot = 50.0
-        expiry_near = "2026-04-17"  # 14 天
-        expiry_far = "2026-05-15"   # 42 天
+        # 近月 DTE=25（≤30），远月 DTE=39（>30），包夹 30 天
+        expiry_near = "2026-04-28"
+        expiry_far = "2026-05-12"
 
         bars = []
         sigma = 0.60
         r = 0.05
-        for exp, dte_days in [(expiry_near, 14), (expiry_far, 42)]:
+        for exp, dte_days in [(expiry_near, 25), (expiry_far, 39)]:
             tte = dte_days / 365
             for s in [48.0, 49.0, 50.0, 51.0, 52.0]:
                 for opt_type in ["P", "C"]:
@@ -229,11 +167,11 @@ class TestComputeTickerIv:
         iv = compute_ticker_iv([], 50.0, "2026-04-03")
         assert math.isnan(iv)
 
-    def test_single_expiry(self):
-        """只有一个到期日时，不做插值"""
+    def test_single_expiry_fallback(self):
+        """只有一个到期日时，降级为 ATM IV"""
         date = "2026-04-03"
         spot = 50.0
-        expiry = "2026-04-17"
+        expiry = "2026-04-17"  # DTE=14，仅近月
         sigma = 0.80
         r = 0.05
         tte = 14 / 365
@@ -247,19 +185,19 @@ class TestComputeTickerIv:
         assert abs(iv - 0.80) < 0.05
 
     def test_filters_anomalous_iv(self):
-        """含异常合约（价格极低），不应影响结果"""
+        """含异常合约（深度 OTM 极低价格），不应影响 ATM 结果"""
         date = "2026-04-03"
         spot = 50.0
-        expiry = "2026-04-17"
+        expiry = "2026-05-03"  # DTE=30
         sigma = 0.60
         r = 0.05
-        tte = 14 / 365
+        tte = 30 / 365
         bars = []
         for s in [49.0, 50.0, 51.0]:
             for opt_type in ["P", "C"]:
                 price = _bs_price_test(spot, s, tte, r, sigma, opt_type)
                 bars.append(_make_option_row("TEST", expiry, opt_type, s, price, date))
-        # 加一个价格极低的异常合约
+        # 深度 OTM 异常合约，不是 ATM 所以不影响
         bars.append(_make_option_row("TEST", expiry, "C", 80.0, 0.001, date))
 
         iv = compute_ticker_iv(bars, spot, date)
