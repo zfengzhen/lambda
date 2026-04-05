@@ -218,9 +218,14 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
         ticker, dates.min().strftime("%Y-%m-%d"), dates.max().strftime("%Y-%m-%d"))
     iv_by_date = {r["date"]: round(r["iv"] * 100, 1) for r in iv_rows}
 
-    # 为每周回测数据附加入场日 IV
+    # 为每周回测数据附加入场日 IV 和 HV
+    hv_by_date = {
+        row["date"]: round(row["hist_vol"], 1)
+        for _, row in df.iterrows() if pd.notna(row.get("hist_vol"))
+    }
     for w in weeks:
         w["iv"] = iv_by_date.get(w["date"])
+        w["hv"] = hv_by_date.get(w["date"])
 
     # 最近 30 个交易日的日K + MACD + MA，供 HTML 图表使用
     # MA5/MA10/MA20/MA60 已由 add_ma() 在完整 df 上计算完成，tail(60) 直接取值即可
@@ -243,6 +248,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             "ma60": round(row["ma60"], 2) if pd.notna(row.get("ma60")) else None,
             "vol_ma20": round(row["vol_ma20"], 0) if pd.notna(row.get("vol_ma20")) else None,
             "iv": iv_by_date.get(row["date"]),
+            "hv": round(row["hist_vol"], 1) if pd.notna(row.get("hist_vol")) else None,
         }
         for _, row in recent.iterrows()
     ]
@@ -257,6 +263,7 @@ def compute_strategy(ticker: str, df: pd.DataFrame) -> dict | None:
             "close": last_bar["close"],
             "change_pct": round((last_bar["close"] - prev_close) / prev_close * 100, 2),
             "iv": last_bar.get("iv"),
+            "hv": last_bar.get("hv"),
         }
         # 收集所有进行中的合约（pending 且有期权数据），按日期从新到旧
         active_contracts = []

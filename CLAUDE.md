@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── indicators.py        # 技术指标（MA/MACD/Pivot）
 ├── template.html        # 可视化报告模板
 │
-├── iv.py                # 标的级 IV 计算：OCC 解析、B-S 反算、VIX 风格加权
+├── iv.py                # 标的级 IV 计算：OCC 解析、B-S 反算、30天 ATM 包夹插值
 ├── data_sync.py         # 数据同步 CLI：ensure_synced 自动判断全量/增量（含 IV 计算）
 ├── data_store.py        # DuckDB 本地存储：建表、写入、查询（option_bars / equity_bars / ticker_iv）
 ├── s3_downloader.py     # S3 期权 Flat Files 按月下载并写入 DB（S3 客户端复用 flat_file_fetcher）
@@ -116,7 +116,8 @@ python -m pytest tests/test_iv.py -m online -v -s --log-cli-level=INFO
 - **option_bars 入库时自动复权**：根据 splits 表计算累积因子，调整价格/volume/OCC symbol 中的 strike。拆股后的数据因子为 1.0，不调整。
 - **splits 表检测新事件**：`ensure_synced` 每次先拉 splits API，发现新记录时自动清空该 ticker 的所有数据并全量重拉。无新事件时 < 1 秒。
 - **ticker_iv 与拆股联动**：`delete_ticker_data()` 同步清空 `ticker_iv`，重拉后自动全量回算。该函数只清目标 ticker 的 `option_month` sync_log，不影响其他 ticker 的同步状态。
-- **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法，与 VIX 方法论一致。
+- **IV 的 tte 用日历天/365**：`compute_ticker_iv` 中 `tte = calendar_days / 365.0`，不是交易日/252。这是 B-S 标准做法。
+- **IV 算法变更需清表重算**：`ticker_iv` 是增量计算的，修改 `compute_ticker_iv` 算法后，需先 `DELETE FROM ticker_iv WHERE ticker='XXX'`，再 `python data_sync.py --tickers XXX` 全量回算。
 - **结算差比使用合约真实 strike**：`enrich_weeks_with_options` 从匹配的 OCC symbol 末 8 位提取精确 strike（如 50.5），用于重算 `settle_diff` 和 `safe_expiry`，与页面显示的期权合约一致。OCC strike 判定为平稳到期时，同步清除 `recovery_days` 和 `recovery_gap`，避免策略 strike 与 OCC strike 微小差异导致残留。
 - **期权合约向下匹配**：`query_option_on_date` 取 strike ≤ 策略目标值且最接近的合约，确保实际 OTM ≥ 策略要求。当合约 strike 间距较大（如 TQQQ $5 间距）时，实际 OTM 可能显著大于策略值。
 

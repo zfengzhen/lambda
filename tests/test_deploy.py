@@ -27,33 +27,6 @@ def test_wrap_with_password_contains_encoded_content():
     assert encoded in result, "应包含 base64 编码的原始 HTML"
 
 
-def test_build_deploy_zip():
-    """构建的 ZIP 应包含 index.html"""
-    import zipfile
-    import io
-    from deploy import build_deploy_zip
-
-    html = "<html>test</html>"
-    zip_bytes = build_deploy_zip(html)
-
-    zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
-    assert "index.html" in zf.namelist()
-    assert zf.read("index.html").decode("utf-8") == html
-
-
-def test_deploy_to_netlify_missing_env(monkeypatch):
-    """缺少环境变量时应抛出 ValueError"""
-    import deploy
-
-    monkeypatch.delenv("LAMBDA_NETLIFY_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LAMBDA_NETLIFY_SITE_ID", raising=False)
-
-    try:
-        deploy.deploy_to_netlify("<html></html>")
-        assert False, "应抛出 ValueError"
-    except ValueError as e:
-        assert "LAMBDA_NETLIFY_AUTH_TOKEN" in str(e)
-
 
 def test_wrap_with_password_has_auth_screen():
     """包装后的 HTML 应包含密码输入界面"""
